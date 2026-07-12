@@ -79,11 +79,11 @@ async function saveImages(files: Express.Multer.File[], folder: string) {
 }
 
 function createToken(userId: number) {
-  return jwt.sign({ userId }, jwtSecret, { expiresIn: "30m" });
+  return jwt.sign({ userId }, jwtSecret, { expiresIn: "7d" });
 }
 
 function setAuthCookie(res: express.Response, userId: number) {
-  res.cookie(authCookieName, createToken(userId), { httpOnly: true, secure: isProduction, sameSite: isProduction ? "none" : "lax", maxAge: 30 * 60 * 1000, path: "/" });
+  res.cookie(authCookieName, createToken(userId), { httpOnly: true, secure: isProduction, sameSite: isProduction ? "none" : "lax", maxAge: 7 * 24 * 60 * 60 * 1000, path: "/" });
 }
 
 function authenticate(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -504,6 +504,25 @@ app.post("/items", authenticate, upload.array("images", 10), async (req, res, ne
     }
     next(error);
   }
+});
+
+app.delete("/items/:id", authenticate, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "商品IDが正しくありません" });
+
+    const item = await prisma.item.findUnique({ where: { id }, select: { sellerId: true, status: true } });
+    if (!item) return res.status(404).json({ error: "商品が見つかりません" });
+    if (item.sellerId !== Number(res.locals.userId)) {
+      return res.status(403).json({ error: "出品者本人だけが取り消せます" });
+    }
+    if (item.status !== "AVAILABLE") {
+      return res.status(409).json({ error: "取引中または売却済みの商品は取り消せません" });
+    }
+
+    await prisma.item.delete({ where: { id } });
+    res.status(204).send();
+  } catch (error) { next(error); }
 });
 
 app.get("/likes", authenticate, async (_req, res, next) => {
