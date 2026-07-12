@@ -6,6 +6,22 @@ import { API_URL, apiFetch, assetUrl } from "./api";
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000;
 const USER_STORAGE_KEY = "demoUser";
 const SESSION_EXPIRY_KEY = "sessionExpiresAt";
+const NAVIGATION_STORAGE_KEY = "currentScreen";
+type NavigationState =
+  | { view: "home" }
+  | { view: "listing" }
+  | { view: "account"; tab: "profile" | "likes" | "settings" | "delete" }
+  | { view: "item"; id: number }
+  | { view: "chats" }
+  | { view: "chat"; id: number };
+
+function readNavigation(): NavigationState {
+  try {
+    return JSON.parse(sessionStorage.getItem(NAVIGATION_STORAGE_KEY) ?? "") as NavigationState;
+  } catch {
+    return { view: "home" };
+  }
+}
 function authHeaders(json = true): HeadersInit {
   const headers: Record<string, string> = {};
   if (json) headers["Content-Type"] = "application/json";
@@ -91,10 +107,16 @@ type ChatSummary = {
 };
 
 export default function App() {
+  const [initialNavigation] = useState(readNavigation);
+  const [pendingNavigation, setPendingNavigation] = useState<NavigationState | null>(
+    ["item", "chats", "chat"].includes(initialNavigation.view)
+      ? initialNavigation
+      : null,
+  );
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showListing, setShowListing] = useState(false);
+  const [showListing, setShowListing] = useState(initialNavigation.view === "listing");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -117,11 +139,11 @@ export default function App() {
   const [loginFaculty, setLoginFaculty] = useState<Faculty | "">("");
   const [chatRoom, setChatRoom] = useState<ChatRoom | null>(null);
   const [chatList, setChatList] = useState<ChatSummary[] | null>(null);
-  const [showAccount, setShowAccount] = useState(false);
+  const [showAccount, setShowAccount] = useState(initialNavigation.view === "account");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountTab, setAccountTab] = useState<
     "profile" | "likes" | "settings" | "delete"
-  >("profile");
+  >(initialNavigation.view === "account" ? initialNavigation.tab : "profile");
   const [socket, setSocket] = useState<Socket | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatNotice, setChatNotice] = useState("");
@@ -157,6 +179,41 @@ export default function App() {
   useEffect(() => {
     void search();
   }, []);
+
+  useEffect(() => {
+    if (!pendingNavigation) return;
+    if (pendingNavigation.view === "item" && !loading) {
+      setSelectedItem(items.find((item) => item.id === pendingNavigation.id) ?? null);
+      setPendingNavigation(null);
+    }
+  }, [pendingNavigation, loading, items]);
+
+  useEffect(() => {
+    if (!currentUser || !pendingNavigation) return;
+    if (pendingNavigation.view === "chats") {
+      void openChats();
+      setPendingNavigation(null);
+    } else if (pendingNavigation.view === "chat") {
+      void selectChat(pendingNavigation.id);
+      setPendingNavigation(null);
+    }
+  }, [currentUser?.id, pendingNavigation]);
+
+  useEffect(() => {
+    if (pendingNavigation) return;
+    const navigation: NavigationState = chatRoom
+      ? { view: "chat", id: chatRoom.id }
+      : chatList
+        ? { view: "chats" }
+        : showAccount
+          ? { view: "account", tab: accountTab }
+          : showListing
+            ? { view: "listing" }
+            : selectedItem
+              ? { view: "item", id: selectedItem.id }
+              : { view: "home" };
+    sessionStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(navigation));
+  }, [pendingNavigation, chatRoom?.id, chatList, showAccount, accountTab, showListing, selectedItem?.id]);
   useEffect(() => {
     if (!showLogin) setAuthError("");
   }, [showLogin]);
