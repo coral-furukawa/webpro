@@ -99,8 +99,9 @@ GET /items?faculty=経済学部&grade=2&courseName=統計&sort=gpa_desc
 
 ## 提出・デプロイ情報
 
-- GitHub: 未設定
-- Render（バックエンド）: 未設定
-- Render（フロントエンド）: 未設定
+- GitHub: https://github.com/coral-furukawa/webpro
+- Render（バックエンド）: https://webpro-a827.onrender.com
+- Render（フロントエンド）: https://frontend-t4x8.onrender.com
+- 制作レポート: [docs/REPORT.md](docs/REPORT.md)
 
-URLが発行されたらここへ追記してください。`.env` と秘密鍵はGitHubへコミットしません。
+`.env` と秘密鍵はGitHubへコミットしません。
