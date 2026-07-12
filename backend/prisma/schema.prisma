@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id      Int     @id @default(autoincrement())
+  name    String
+  faculty String
+  department String?
+  email   String  @unique
+  passwordHash String?
+  grade   Int
+  gpa     Decimal? @db.Decimal(3, 2)
+  items   Item[]
+  likes   Like[]
+  demands Demand[]
+  purchases Transaction[] @relation("BuyerTransactions")
+  receivedReviews Review[] @relation("Reviewee")
+  writtenReviews  Review[] @relation("Reviewer")
+  buyerChats ChatRoom[] @relation("ChatBuyer")
+  sellerChats ChatRoom[] @relation("ChatSeller")
+  messages Message[]
+
+  @@index([faculty, grade, gpa])
+}
+
+model Course {
+  id         Int    @id @default(autoincrement())
+  courseName String
+  faculty    String
+  department String?
+  instructor String?
+  weekday    Int?
+  period     Int?
+  items      Item[]
+  demands    Demand[]
+
+  @@index([courseName])
+  @@index([faculty])
+}
+
+model Item {
+  id        Int        @id @default(autoincrement())
+  title     String
+  price     Int
+  type      ItemType   @default(TEXTBOOK)
+  condition ItemCondition @default(GOOD)
+  description String  @default("")
+  imageUrl  String?
+  handoffPlace String?
+  handoffTime String?
+  status    ItemStatus @default(AVAILABLE)
+  sellerId  Int
+  courseId  Int
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  seller    User       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  likes     Like[]
+  transaction Transaction?
+  chatRooms ChatRoom[]
+  images    ItemImage[]
+
+  @@index([sellerId])
+  @@index([courseId])
+  @@index([status, createdAt])
+}
+
+model ItemImage {
+  id       Int    @id @default(autoincrement())
+  itemId   Int
+  url      String
+  position Int    @default(0)
+  item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, position])
+}
+
+model Like {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  itemId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([itemId])
+}
+
+model Demand {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  courseId Int
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}
+
+model Transaction {
+  id          Int               @id @default(autoincrement())
+  itemId      Int               @unique
+  buyerId     Int
+  status      TransactionStatus @default(REQUESTED)
+  handoffPlace String?
+  handoffTime DateTime?
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  item        Item              @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  buyer       User              @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Restrict)
+  reviews     Review[]
+
+  @@index([buyerId, status])
+}
+
+model Review {
+  id            Int         @id @default(autoincrement())
+  transactionId Int
+  reviewerId    Int
+  revieweeId    Int
+  rating        Int
+  comment       String?
+  createdAt     DateTime    @default(now())
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  reviewer      User        @relation("Reviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  reviewee      User        @relation("Reviewee", fields: [revieweeId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, reviewerId])
+  @@index([revieweeId])
+}
+
+model ChatRoom {
+  id        Int      @id @default(autoincrement())
+  itemId    Int
+  buyerId   Int
+  sellerId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  buyer     User     @relation("ChatBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller    User     @relation("ChatSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@unique([itemId, buyerId])
+  @@index([sellerId, updatedAt])
+}
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  chatRoomId Int
+  senderId   Int
+  content    String
+  imageUrl   String?
+  createdAt  DateTime @default(now())
+  readAt     DateTime?
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  sender     User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([chatRoomId, createdAt])
+}
+
+model LoginAttempt {
+  id          Int       @id @default(autoincrement())
+  email       String    @unique
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
+enum ItemStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+}
+
+enum ItemType {
+  TEXTBOOK
+  NOTES
+  OTHER
+}
+
+enum ItemCondition {
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum TransactionStatus {
+  REQUESTED
+  ACCEPTED
+  COMPLETED
+  CANCELLED
+}
