@@ -3,7 +3,7 @@ import { departmentsByFaculty, faculties, type Faculty } from "./keioAcademics";
 import { io, type Socket } from "socket.io-client";
 import { API_URL, apiFetch, assetUrl } from "./api";
 
-const SESSION_DURATION = 30 * 60 * 1000;
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000;
 const USER_STORAGE_KEY = "demoUser";
 const SESSION_EXPIRY_KEY = "sessionExpiresAt";
 function authHeaders(json = true): HeadersInit {
@@ -166,16 +166,27 @@ export default function App() {
     let lastTokenRefresh = 0;
     const extendSession = async () => {
       if (!localStorage.getItem(USER_STORAGE_KEY)) return;
-      localStorage.setItem(
-        SESSION_EXPIRY_KEY,
-        String(Date.now() + SESSION_DURATION),
-      );
-      if (Date.now() - lastTokenRefresh < 5 * 60 * 1000) return;
+      if (Date.now() - lastTokenRefresh < 5 * 60 * 1000) {
+        localStorage.setItem(
+          SESSION_EXPIRY_KEY,
+          String(Date.now() + SESSION_DURATION),
+        );
+        return;
+      }
       lastTokenRefresh = Date.now();
       const response = await apiFetch("/auth/refresh", {
         method: "POST",
         headers: authHeaders(false),
       });
+      if (!response.ok) {
+        logout("ログインの有効期限が切れました。もう一度ログインしてください。");
+        setShowLogin(true);
+        return;
+      }
+      localStorage.setItem(
+        SESSION_EXPIRY_KEY,
+        String(Date.now() + SESSION_DURATION),
+      );
     };
     const checkSession = () => {
       if (Number(localStorage.getItem(SESSION_EXPIRY_KEY)) <= Date.now())
@@ -547,10 +558,29 @@ export default function App() {
     });
     if (!response.ok) {
       const data = await response.json();
+      if (response.status === 401 && data.error?.includes("有効期限")) {
+        setShowAccount(false);
+        logout("安全のため、アカウント削除前にもう一度ログインしてください。");
+        setShowLogin(true);
+        return;
+      }
       return setError(data.error ?? "アカウントを削除できませんでした");
     }
     setShowAccount(false);
     logout("アカウントと関連データを削除しました。");
+  }
+
+  async function cancelListing(item: Item) {
+    if (!window.confirm(`「${item.title}」の出品を取り消しますか？`)) return;
+    const response = await apiFetch(`/items/${item.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      const data = await response.json();
+      return setError(data.error ?? "出品を取り消せませんでした");
+    }
+    setItems((current) => current.filter((listed) => listed.id !== item.id));
+    setLikedItems((current) => current.filter((liked) => liked.id !== item.id));
+    setSelectedItem(null);
+    setNotice("出品を取り消しました。");
   }
 
   const selectedImages = selectedItem
@@ -1121,29 +1151,41 @@ export default function App() {
                 </section>
               )}
               <div className="detail-actions">
-                <button
-                  type="button"
-                  className={
-                    likedItems.some((liked) => liked.id === selectedItem.id)
-                      ? "detail-like liked"
-                      : "detail-like"
-                  }
-                  onClick={() => void toggleLike(selectedItem)}
-                >
-                  {likedItems.some((liked) => liked.id === selectedItem.id)
-                    ? "♥ いいね済み"
-                    : "♡ いいね"}
-                  （{selectedItem._count.likes}）
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedItem(null);
-                    void startChat(selectedItem.id);
-                  }}
-                >
-                  購入相談・チャット
-                </button>
+                {currentUser?.id === selectedItem.seller.id ? (
+                  <button
+                    type="button"
+                    className="delete-button"
+                    onClick={() => void cancelListing(selectedItem)}
+                  >
+                    この出品を取り消す
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={
+                        likedItems.some((liked) => liked.id === selectedItem.id)
+                          ? "detail-like liked"
+                          : "detail-like"
+                      }
+                      onClick={() => void toggleLike(selectedItem)}
+                    >
+                      {likedItems.some((liked) => liked.id === selectedItem.id)
+                        ? "♥ いいね済み"
+                        : "♡ いいね"}
+                      （{selectedItem._count.likes}）
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedItem(null);
+                        void startChat(selectedItem.id);
+                      }}
+                    >
+                      購入相談・チャット
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1433,10 +1475,10 @@ export default function App() {
                       <div>
                         <strong>自動ログアウト</strong>
                         <p>
-                          操作がない状態で30分経過すると、自動的にログアウトします。
+                          ログインは最終操作から7日間有効です。
                         </p>
                       </div>
-                      <span>30分</span>
+                      <span>7日間</span>
                     </div>
                     <div className="setting-row">
                       <div>
