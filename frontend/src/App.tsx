@@ -118,6 +118,7 @@ export default function App() {
   const [chatRoom, setChatRoom] = useState<ChatRoom | null>(null);
   const [chatList, setChatList] = useState<ChatSummary[] | null>(null);
   const [showAccount, setShowAccount] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountTab, setAccountTab] = useState<
     "profile" | "likes" | "settings" | "delete"
   >("profile");
@@ -565,6 +566,15 @@ export default function App() {
       <header>
         <nav>
           <span className="eyebrow">KEIO STUDENTS ONLY</span>
+          <button
+            type="button"
+            className="menu-toggle"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            {mobileMenuOpen ? "閉じる ×" : "メニュー ☰"}
+          </button>
           <div className="nav-actions">
             {currentUser ? (
               <>
@@ -603,6 +613,73 @@ export default function App() {
               ＋ 出品する
             </button>
           </div>
+          {mobileMenuOpen && (
+            <div id="mobile-navigation" className="mobile-navigation">
+              {currentUser ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountTab("profile");
+                      setShowAccount(true);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    マイアカウント
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      void openChats();
+                    }}
+                  >
+                    チャット{unreadCount > 0 ? `（${unreadCount}件）` : ""}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowListing(true);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    ＋ 出品する
+                  </button>
+                  <button
+                    type="button"
+                    className="mobile-logout"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      logout();
+                    }}
+                  >
+                    ログアウト
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLogin(true);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    ログイン
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLogin(true);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    ＋ 出品する
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </nav>
         <h1>
           次の人へ、
