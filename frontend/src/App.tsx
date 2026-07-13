@@ -1243,10 +1243,19 @@ export default function App() {
             <div className="detail-gallery">
               <div className="detail-main-image">
                 {selectedImages[detailImage] ? (
-                  <img
-                    src={assetUrl(selectedImages[detailImage])}
-                    alt={selectedItem.title}
-                  />
+                  <>
+                    <img
+                      className="image-backdrop"
+                      src={assetUrl(selectedImages[detailImage])}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    <img
+                      className="image-foreground"
+                      src={assetUrl(selectedImages[detailImage])}
+                      alt={selectedItem.title}
+                    />
+                  </>
                 ) : (
                   <span>NO IMAGE</span>
                 )}
@@ -1964,10 +1973,19 @@ export default function App() {
             >
               <div className="book">
                 {item.images[0]?.url || item.imageUrl ? (
-                  <img
-                    src={assetUrl(item.images[0]?.url || item.imageUrl)}
-                    alt={item.title}
-                  />
+                  <>
+                    <img
+                      className="image-backdrop"
+                      src={assetUrl(item.images[0]?.url || item.imageUrl)}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    <img
+                      className="image-foreground"
+                      src={assetUrl(item.images[0]?.url || item.imageUrl)}
+                      alt={item.title}
+                    />
+                  </>
                 ) : (
                   <span>{item.course.courseName}</span>
                 )}

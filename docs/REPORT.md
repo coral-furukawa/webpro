@@ -44,7 +44,7 @@ PostgreSQL
 
 データベースにはPostgreSQLを使用し、Prismaで操作した。主なテーブルはUser、Course、Item、ItemImage、Like、Demand、ChatRoom、Message、Transaction、Review、LoginAttemptである。商品に出品者情報を重複保存せず、ItemとUserをリレーションで結び付けることで、出品者の学部、学年、GPAを検索に利用できるようにした。
 
-商品画像、チャット画像、プロフィール画像はデータベースへ直接保存せず、CloudinaryへアップロードしたURLを保存する。これにより、Renderのサーバーが再起動しても画像が消えない構成にした。プロフィール画像のURLはUserに保存し、ヘッダー、マイアカウント、商品詳細、出品者プロフィールへ共通して反映する。画像が未設定の場合は利用者名の頭文字を表示する。本番環境は、ReactをRenderのStatic Site、ExpressをWeb Service、PostgreSQLをRender Postgresへデプロイした。
+商品画像、チャット画像、プロフィール画像はデータベースへ直接保存せず、CloudinaryへアップロードしたURLを保存する。これにより、Renderのサーバーが再起動しても画像が消えない構成にした。縦長・横長など写真の比率が異なる場合も、元画像を切らずに中央へ収め、余白へ同じ画像を拡大・ぼかして表示することで、統一した枠の中で見やすくした。プロフィール画像のURLはUserに保存し、ヘッダー、マイアカウント、商品詳細、出品者プロフィールへ共通して反映する。画像が未設定の場合は利用者名の頭文字を表示する。本番環境は、ReactをRenderのStatic Site、ExpressをWeb Service、PostgreSQLをRender Postgresへデプロイした。
 
 ### セキュリティ面
 
