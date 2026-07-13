@@ -1771,3 +1771,39 @@ fieldset {
   box-shadow: none;
   font-size: 20px;
 }
+
+/* 商品写真の明暗に左右されない、読みやすいカード本文 */
+.item-card .card-body {
+  position: relative;
+  color: #15241d;
+  background: #fffdf8 !important;
+  border-top: 1px solid #e3e0d7;
+}
+.item-card .card-body > small,
+.item-card .card-body > p {
+  color: #3f4d46;
+  font-weight: 600;
+  line-height: 1.65;
+}
+.item-card .card-body h3 {
+  color: #14231c;
+  font-weight: 800;
+  text-shadow: none;
+}
+.item-card .meta strong {
+  color: #bd3f29;
+  font-weight: 800;
+}
+.item-card .like-button {
+  color: #46534c;
+  font-weight: 800;
+}
+.item-card .like-button.liked {
+  color: #b4412c;
+}
+.item-card .seller-link {
+  color: #1d4f75;
+  font-weight: 800;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
