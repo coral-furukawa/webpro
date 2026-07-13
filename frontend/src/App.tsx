@@ -1243,19 +1243,11 @@ export default function App() {
             <div className="detail-gallery">
               <div className="detail-main-image">
                 {selectedImages[detailImage] ? (
-                  <>
-                    <img
-                      className="image-backdrop"
-                      src={assetUrl(selectedImages[detailImage])}
-                      alt=""
-                      aria-hidden="true"
-                    />
-                    <img
-                      className="image-foreground"
-                      src={assetUrl(selectedImages[detailImage])}
-                      alt={selectedItem.title}
-                    />
-                  </>
+                  <img
+                    className="image-foreground"
+                    src={assetUrl(selectedImages[detailImage])}
+                    alt={selectedItem.title}
+                  />
                 ) : (
                   <span>NO IMAGE</span>
                 )}
