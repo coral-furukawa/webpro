@@ -270,7 +270,7 @@ app.put("/users/me/avatar", authenticate, upload.single("avatar"), async (req, r
   } catch (error) { next(error); }
 });
 
-app.patch("/users/me", authenticate, async (req, res, next) => {
+app.post("/users/me/profile", authenticate, async (req, res, next) => {
   try {
     const name = String(req.body.name ?? "").trim();
     const faculty = String(req.body.faculty ?? "").trim();

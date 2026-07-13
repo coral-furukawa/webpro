@@ -695,20 +695,22 @@ export default function App() {
     setError("");
     const values = Object.fromEntries(new FormData(event.currentTarget));
     try {
-      const response = await apiFetch("/users/me", {
-        method: "PATCH",
+      const response = await apiFetch("/users/me/profile", {
+        method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ ...values, grade: Number(values.grade) }),
       });
-      const data = await response.json();
+      const data = response.headers.get("content-type")?.includes("application/json")
+        ? await response.json()
+        : { error: "サーバーから正しい応答を受け取れませんでした" };
       if (!response.ok) throw new Error(data.error ?? "プロフィールを更新できませんでした");
       setCurrentUser(data.user);
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
       setProfileEditing(false);
       setNotice("プロフィールを更新しました。");
       await search();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "プロフィールを更新できませんでした");
+    } catch {
+      setError("プロフィールを更新できませんでした。通信状態を確認して、もう一度お試しください");
     } finally {
       setEditSaving(false);
     }
