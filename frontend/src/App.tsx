@@ -47,7 +47,7 @@ type Item = {
     gpa: string | null;
     avatarUrl?: string | null;
   };
-  course: { courseName: string };
+  course: { courseName: string; instructor?: string | null };
   _count: { likes: number };
 };
 
@@ -84,6 +84,7 @@ type CurrentUser = {
   faculty: string;
   department: string;
   grade: number;
+  gpa?: string | null;
   avatarUrl?: string | null;
 };
 type ChatRoom = {
@@ -141,6 +142,10 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileFaculty, setProfileFaculty] = useState<Faculty | "">("");
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
   const [loginFaculty, setLoginFaculty] = useState<Faculty | "">("");
   const [chatRoom, setChatRoom] = useState<ChatRoom | null>(null);
   const [chatList, setChatList] = useState<ChatSummary[] | null>(null);
@@ -681,6 +686,56 @@ export default function App() {
       setError(cause instanceof Error ? cause.message : "プロフィール画像を変更できませんでした");
     } finally {
       setAvatarLoading(false);
+    }
+  }
+
+  async function updateProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setEditSaving(true);
+    setError("");
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      const response = await apiFetch("/users/me", {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ ...values, grade: Number(values.grade) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "プロフィールを更新できませんでした");
+      setCurrentUser(data.user);
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+      setProfileEditing(false);
+      setNotice("プロフィールを更新しました。");
+      await search();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "プロフィールを更新できませんでした");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function updateItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingItem) return;
+    setEditSaving(true);
+    setError("");
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      const response = await apiFetch(`/items/${editingItem.id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ ...values, price: Number(values.price) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "商品を更新できませんでした");
+      setItems((current) => current.map((item) => item.id === data.item.id ? data.item : item));
+      setSelectedItem(data.item);
+      setEditingItem(null);
+      setNotice("出品内容を更新しました。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "商品を更新できませんでした");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -1276,13 +1331,21 @@ export default function App() {
               )}
               <div className="detail-actions">
                 {currentUser?.id === selectedItem.seller.id ? (
-                  <button
-                    type="button"
-                    className="delete-button"
-                    onClick={() => void cancelListing(selectedItem)}
-                  >
-                    この出品を取り消す
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setEditingItem(selectedItem)}
+                    >
+                      出品内容を編集
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-button"
+                      onClick={() => void cancelListing(selectedItem)}
+                    >
+                      この出品を取り消す
+                    </button>
+                  </>
                 ) : (
                   <>
                     <button
@@ -1558,6 +1621,16 @@ export default function App() {
                           {currentUser.faculty}・{currentUser.department}
                         </p>
                         <p>{currentUser.grade}年</p>
+                        <button
+                          type="button"
+                          className="profile-edit-button"
+                          onClick={() => {
+                            setProfileFaculty(currentUser.faculty as Faculty);
+                            setProfileEditing(true);
+                          }}
+                        >
+                          プロフィールを編集
+                        </button>
                       </div>
                     </div>
                     <div className="account-info">
@@ -1658,6 +1731,99 @@ export default function App() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {profileEditing && currentUser && (
+        <div className="modal-backdrop" onMouseDown={() => setProfileEditing(false)}>
+          <div className="modal edit-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">EDIT PROFILE</span>
+                <h2>プロフィールを編集</h2>
+              </div>
+              <button className="close" type="button" onClick={() => setProfileEditing(false)}>×</button>
+            </div>
+            <form className="listing-form" onSubmit={updateProfile}>
+              <label className="required-field">
+                名前・ニックネーム
+                <input name="name" defaultValue={currentUser.name} required />
+              </label>
+              <div className="form-row">
+                <label className="required-field">
+                  学部
+                  <select
+                    name="faculty"
+                    value={profileFaculty}
+                    onChange={(event) => setProfileFaculty(event.target.value as Faculty | "")}
+                    required
+                  >
+                    <option value="">選択してください</option>
+                    {faculties.map((faculty) => <option key={faculty}>{faculty}</option>)}
+                  </select>
+                </label>
+                <label className="required-field">
+                  学科
+                  <select name="department" key={profileFaculty} defaultValue={profileFaculty === currentUser.faculty ? currentUser.department : ""} disabled={!profileFaculty} required>
+                    <option value="">{profileFaculty ? "選択してください" : "先に学部を選択"}</option>
+                    {profileFaculty && departmentsByFaculty[profileFaculty].map((department) => <option key={department}>{department}</option>)}
+                  </select>
+                </label>
+                <label className="required-field">
+                  学年
+                  <input name="grade" type="number" min="1" max="6" defaultValue={currentUser.grade} required />
+                </label>
+              </div>
+              <label className="optional-field">
+                GPA
+                <input name="gpa" type="number" min="0" max="4" step="0.01" defaultValue={currentUser.gpa ?? ""} />
+              </label>
+              {error && <p className="message error">{error}</p>}
+              <button className="submit-listing" disabled={editSaving}>{editSaving ? "保存中…" : "変更を保存"}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingItem && (
+        <div className="modal-backdrop" onMouseDown={() => setEditingItem(null)}>
+          <div className="modal edit-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">EDIT LISTING</span>
+                <h2>出品内容を編集</h2>
+              </div>
+              <button className="close" type="button" onClick={() => setEditingItem(null)}>×</button>
+            </div>
+            <form className="listing-form" onSubmit={updateItem}>
+              <label className="required-field">商品名<input name="title" defaultValue={editingItem.title} required /></label>
+              <div className="form-row">
+                <label className="required-field">授業名<input name="courseName" defaultValue={editingItem.course.courseName} required /></label>
+                <label className="optional-field">担当教員<input name="instructor" defaultValue={editingItem.course.instructor ?? ""} /></label>
+                <label className="required-field">価格<input name="price" type="number" min="0" defaultValue={editingItem.price} required /></label>
+              </div>
+              <div className="form-row">
+                <label className="required-field">種類
+                  <select name="type" defaultValue={editingItem.type} required>
+                    <option value="TEXTBOOK">教科書</option><option value="NOTES">授業ノート</option><option value="OTHER">その他</option>
+                  </select>
+                </label>
+                <label className="required-field">状態
+                  <select name="condition" defaultValue={editingItem.condition} required>
+                    <option value="LIKE_NEW">ほぼ新品</option><option value="GOOD">良好</option><option value="FAIR">使用感あり</option><option value="POOR">傷・書き込みあり</option>
+                  </select>
+                </label>
+              </div>
+              <label className="optional-field">説明<textarea name="description" rows={4} defaultValue={editingItem.description} /></label>
+              <div className="form-row">
+                <label className="optional-field">受け渡し希望場所<input name="handoffPlace" defaultValue={editingItem.handoffPlace ?? ""} /></label>
+                <label className="optional-field">受け渡し希望時間<input name="handoffTime" defaultValue={editingItem.handoffTime ?? ""} /></label>
+              </div>
+              <p className="account-info">写真を変更したい場合は、一度出品を取り消して再出品してください。</p>
+              {error && <p className="message error">{error}</p>}
+              <button className="submit-listing" disabled={editSaving}>{editSaving ? "保存中…" : "変更を保存"}</button>
+            </form>
           </div>
         </div>
       )}

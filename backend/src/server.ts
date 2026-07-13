@@ -198,7 +198,7 @@ app.post("/auth/register", authLimiter, async (req, res, next) => {
       where: { email: normalizedEmail },
       update: { name: String(name).trim(), faculty, department, grade, passwordHash },
       create: { email: normalizedEmail, name: String(name).trim(), faculty, department, grade, passwordHash },
-      select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
+      select: { id: true, name: true, faculty: true, department: true, grade: true, gpa: true, avatarUrl: true },
     });
     const token = setAuthCookie(res, user.id);
     res.json({ user, token });
@@ -232,7 +232,7 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
     }
     await prisma.loginAttempt.deleteMany({ where: { email } });
     const token = setAuthCookie(res, user.id);
-    res.json({ user: { id: user.id, name: user.name, faculty: user.faculty, department: user.department, grade: user.grade, avatarUrl: user.avatarUrl }, token });
+    res.json({ user: { id: user.id, name: user.name, faculty: user.faculty, department: user.department, grade: user.grade, gpa: user.gpa, avatarUrl: user.avatarUrl }, token });
   } catch (error) { next(error); }
 });
 
@@ -245,7 +245,7 @@ app.get("/auth/me", authenticate, async (_req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: Number(res.locals.userId) },
-      select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
+      select: { id: true, name: true, faculty: true, department: true, grade: true, gpa: true, avatarUrl: true },
     });
     if (!user) return res.status(401).json({ error: "ユーザーが見つかりません" });
     res.json({ user });
@@ -265,6 +265,28 @@ app.put("/users/me/avatar", authenticate, upload.single("avatar"), async (req, r
       where: { id: Number(res.locals.userId) },
       data: { avatarUrl },
       select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
+    });
+    res.json({ user });
+  } catch (error) { next(error); }
+});
+
+app.patch("/users/me", authenticate, async (req, res, next) => {
+  try {
+    const name = String(req.body.name ?? "").trim();
+    const faculty = String(req.body.faculty ?? "").trim();
+    const department = String(req.body.department ?? "").trim();
+    const grade = Number(req.body.grade);
+    const gpa = req.body.gpa === "" || req.body.gpa == null ? null : Number(req.body.gpa);
+    if (!name || !faculty || !department || !Number.isInteger(grade) || grade < 1 || grade > 6) {
+      return res.status(400).json({ error: "名前、学部、学科、学年を正しく入力してください" });
+    }
+    if (gpa !== null && (!Number.isFinite(gpa) || gpa < 0 || gpa > 4)) {
+      return res.status(400).json({ error: "GPAは0〜4で入力してください" });
+    }
+    const user = await prisma.user.update({
+      where: { id: Number(res.locals.userId) },
+      data: { name, faculty, department, grade, gpa },
+      select: { id: true, name: true, faculty: true, department: true, grade: true, gpa: true, avatarUrl: true },
     });
     res.json({ user });
   } catch (error) { next(error); }
@@ -543,6 +565,50 @@ app.delete("/items/:id", authenticate, async (req, res, next) => {
 
     await prisma.item.delete({ where: { id } });
     res.status(204).send();
+  } catch (error) { next(error); }
+});
+
+app.patch("/items/:id", authenticate, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const userId = Number(res.locals.userId);
+    const title = String(req.body.title ?? "").trim();
+    const price = Number(req.body.price);
+    const type = String(req.body.type ?? "");
+    const condition = String(req.body.condition ?? "");
+    const description = String(req.body.description ?? "").trim();
+    const handoffPlace = String(req.body.handoffPlace ?? "").trim();
+    const handoffTime = String(req.body.handoffTime ?? "").trim();
+    const courseName = String(req.body.courseName ?? "").trim();
+    const instructor = String(req.body.instructor ?? "").trim();
+    if (!Number.isInteger(id) || !title || !courseName || !Number.isInteger(price) || price < 0) {
+      return res.status(400).json({ error: "商品名、授業名、0円以上の価格を入力してください" });
+    }
+    if (!["TEXTBOOK", "NOTES", "OTHER"].includes(type) || !["LIKE_NEW", "GOOD", "FAIR", "POOR"].includes(condition)) {
+      return res.status(400).json({ error: "商品の種類または状態が正しくありません" });
+    }
+    const existing = await prisma.item.findUnique({ where: { id }, select: { sellerId: true, status: true } });
+    if (!existing) return res.status(404).json({ error: "商品が見つかりません" });
+    if (existing.sellerId !== userId) return res.status(403).json({ error: "出品者本人だけが編集できます" });
+    if (existing.status !== "AVAILABLE") return res.status(409).json({ error: "取引中または売却済みの商品は編集できません" });
+
+    const seller = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const course = await prisma.course.findFirst({
+      where: { courseName, faculty: seller.faculty, instructor: instructor || null },
+    }) ?? await prisma.course.create({
+      data: { courseName, faculty: seller.faculty, department: seller.department, instructor: instructor || null },
+    });
+    const item = await prisma.item.update({
+      where: { id },
+      data: { title, price, type: type as "TEXTBOOK" | "NOTES" | "OTHER", condition: condition as "LIKE_NEW" | "GOOD" | "FAIR" | "POOR", description, handoffPlace: handoffPlace || null, handoffTime: handoffTime || null, courseId: course.id },
+      include: {
+        seller: { select: { id: true, name: true, faculty: true, grade: true, gpa: true, avatarUrl: true } },
+        course: true,
+        images: { orderBy: { position: "asc" } },
+        _count: { select: { likes: true } },
+      },
+    });
+    res.json({ item });
   } catch (error) { next(error); }
 });
 
