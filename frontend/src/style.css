@@ -1957,3 +1957,59 @@ fieldset {
   color: #20385f;
   background: #f7f1e4;
 }
+
+/* 一覧カードの寸法を統一し、写真を主役にする */
+.grid {
+  align-items: stretch;
+}
+.item-card {
+  height: 620px;
+  min-height: 0;
+}
+.item-card .card-body {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  min-height: 0;
+  height: 286px;
+  margin: 0;
+  padding: 18px 20px 18px;
+  border-radius: 20px 20px 12px 12px;
+}
+.item-card .card-body > small {
+  font-size: 12px;
+}
+.item-card .card-body h3 {
+  min-height: 0;
+  margin: 5px 0 10px;
+  font-size: 18px;
+  line-height: 1.35;
+}
+.item-card .meta strong {
+  font-size: 25px;
+}
+.item-card .card-body > p {
+  margin: 7px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.item-card .like-button {
+  padding: 4px 6px;
+  font-size: 14px;
+}
+.item-card .chat-button {
+  margin-top: auto;
+  padding: 12px 14px;
+  font-size: 14px;
+}
+
+@media (max-width: 700px) {
+  .item-card {
+    height: 570px;
+  }
+  .item-card .card-body {
+    height: 275px;
+  }
+}
