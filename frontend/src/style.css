@@ -1484,16 +1484,17 @@ fieldset {
 }
 .item-detail-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
-  gap: clamp(28px, 5vw, 70px);
-  width: min(1180px, 92%);
-  margin: 42px auto;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.75fr);
+  gap: clamp(28px, 3vw, 54px);
+  width: min(1680px, 96%);
+  margin: 32px auto 48px;
 }
 .detail-main-image {
   display: grid;
   place-items: center;
   overflow: hidden;
-  aspect-ratio: 4 / 3;
+  height: min(76vh, 920px);
+  min-height: 560px;
   border-radius: 12px;
   color: #e9dec3;
   background: #824435;
@@ -1616,6 +1617,11 @@ fieldset {
   }
   .detail-info > h1 {
     font-size: 29px;
+  }
+  .detail-main-image {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 4 / 3;
   }
 }
 @media (max-width: 600px) {
