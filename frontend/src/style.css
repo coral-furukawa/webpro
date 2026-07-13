@@ -1856,3 +1856,30 @@ fieldset {
   border-radius: 8px;
   font-size: 13px;
 }
+
+/* 商品カードを軽いガラス調にして、内容量に応じた高さにする */
+.grid {
+  align-items: start;
+}
+.item-card {
+  height: auto;
+  background: transparent;
+  border: 1px solid #ffffff99;
+  border-radius: 14px;
+  box-shadow: 0 12px 30px #20385f17;
+}
+.item-card .card-body {
+  z-index: 1;
+  height: auto;
+  margin-top: -18px;
+  padding: 22px 20px 20px;
+  border-top: 1px solid #ffffffcc;
+  border-radius: 18px 18px 12px 12px;
+  background: #fffdf8d9 !important;
+  box-shadow: 0 -8px 24px #20385f12;
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+}
+.item-card .chat-button {
+  margin-top: 18px;
+}
