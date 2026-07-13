@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { departmentsByFaculty, faculties, type Faculty } from "./keioAcademics";
 import { io, type Socket } from "socket.io-client";
-import { API_URL, apiFetch, assetUrl } from "./api";
+import { API_URL, AUTH_TOKEN_KEY, apiFetch, assetUrl } from "./api";
 
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000;
 const USER_STORAGE_KEY = "demoUser";
@@ -245,6 +245,8 @@ export default function App() {
         setShowLogin(true);
         return;
       }
+      const refreshed = await response.json();
+      localStorage.setItem(AUTH_TOKEN_KEY, refreshed.token);
       localStorage.setItem(
         SESSION_EXPIRY_KEY,
         String(Date.now() + SESSION_DURATION),
@@ -273,8 +275,8 @@ export default function App() {
       return;
     }
     const connection = API_URL
-      ? io(API_URL, { withCredentials: true })
-      : io({ withCredentials: true });
+      ? io(API_URL, { withCredentials: true, auth: { token: localStorage.getItem(AUTH_TOKEN_KEY) } })
+      : io({ withCredentials: true, auth: { token: localStorage.getItem(AUTH_TOKEN_KEY) } });
     setSocket(connection);
     return () => {
       connection.disconnect();
@@ -374,6 +376,7 @@ export default function App() {
   function logout(message = "ログアウトしました。") {
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(SESSION_EXPIRY_KEY);
+    localStorage.removeItem(AUTH_TOKEN_KEY);
     void apiFetch("/auth/logout", { method: "POST" });
     setCurrentUser(null);
     setChatRoom(null);
@@ -463,6 +466,7 @@ export default function App() {
         return;
       }
       setCurrentUser(data.user);
+      localStorage.setItem(AUTH_TOKEN_KEY, data.token);
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
       localStorage.setItem(
         SESSION_EXPIRY_KEY,

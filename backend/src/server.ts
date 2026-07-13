@@ -84,11 +84,16 @@ function createToken(userId: number) {
 }
 
 function setAuthCookie(res: express.Response, userId: number) {
-  res.cookie(authCookieName, createToken(userId), { httpOnly: true, secure: isProduction, sameSite: isProduction ? "none" : "lax", maxAge: 7 * 24 * 60 * 60 * 1000, path: "/" });
+  const token = createToken(userId);
+  res.cookie(authCookieName, token, { httpOnly: true, secure: isProduction, sameSite: isProduction ? "none" : "lax", maxAge: 7 * 24 * 60 * 60 * 1000, path: "/" });
+  return token;
 }
 
 function authenticate(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const token = req.cookies?.[authCookieName];
+  const bearerToken = req.headers.authorization?.startsWith("Bearer ")
+    ? req.headers.authorization.slice(7)
+    : undefined;
+  const token = bearerToken ?? req.cookies?.[authCookieName];
   try {
     const payload = jwt.verify(token ?? "", jwtSecret) as { userId: number };
     res.locals.userId = payload.userId;
@@ -195,8 +200,8 @@ app.post("/auth/register", authLimiter, async (req, res, next) => {
       create: { email: normalizedEmail, name: String(name).trim(), faculty, department, grade, passwordHash },
       select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
     });
-    setAuthCookie(res, user.id);
-    res.json({ user });
+    const token = setAuthCookie(res, user.id);
+    res.json({ user, token });
   } catch (error) { next(error); }
 });
 
@@ -226,14 +231,14 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
       return res.status(401).json({ error: `メールアドレスまたはパスワードが違います。あと${maxLoginAttempts - attempts}回失敗すると15分間ロックされます` });
     }
     await prisma.loginAttempt.deleteMany({ where: { email } });
-    setAuthCookie(res, user.id);
-    res.json({ user: { id: user.id, name: user.name, faculty: user.faculty, department: user.department, grade: user.grade, avatarUrl: user.avatarUrl } });
+    const token = setAuthCookie(res, user.id);
+    res.json({ user: { id: user.id, name: user.name, faculty: user.faculty, department: user.department, grade: user.grade, avatarUrl: user.avatarUrl }, token });
   } catch (error) { next(error); }
 });
 
 app.post("/auth/refresh", authenticate, (_req, res) => {
-  setAuthCookie(res, Number(res.locals.userId));
-  res.status(204).send();
+  const token = setAuthCookie(res, Number(res.locals.userId));
+  res.json({ token });
 });
 
 app.get("/auth/me", authenticate, async (_req, res, next) => {
@@ -380,8 +385,10 @@ app.post("/chat-rooms/:id/images", authenticate, upload.single("image"), async (
 io.use((socket, next) => {
   try {
     const cookieHeader = socket.handshake.headers.cookie ?? "";
-    const token = cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${authCookieName}=`))?.slice(authCookieName.length + 1);
-    const payload = jwt.verify(decodeURIComponent(token ?? ""), jwtSecret) as { userId: number };
+    const cookieToken = cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${authCookieName}=`))?.slice(authCookieName.length + 1);
+    const authToken = String(socket.handshake.auth.token ?? "");
+    const token = authToken || (cookieToken ? decodeURIComponent(cookieToken) : "");
+    const payload = jwt.verify(token, jwtSecret) as { userId: number };
     socket.data.userId = payload.userId;
     next();
   } catch {
