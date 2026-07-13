@@ -1931,10 +1931,10 @@ fieldset {
   border: 1px solid #ffffff36;
   border-width: 1px 0 0;
   border-radius: 22px 22px 12px 12px;
-  background: #10251bc4 !important;
+  background: #10251b94 !important;
   box-shadow: 0 -10px 30px #07150e30;
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(17px) saturate(1.2);
+  -webkit-backdrop-filter: blur(17px) saturate(1.2);
 }
 .item-card .card-body > small,
 .item-card .card-body > p,
