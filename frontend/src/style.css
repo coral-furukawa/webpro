@@ -257,6 +257,32 @@ textarea {
   justify-self: end;
   padding: 15px 32px;
 }
+.submit-listing:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+.button-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  border: 2px solid #ffffff66;
+  border-top-color: white;
+  border-radius: 50%;
+  vertical-align: -3px;
+  animation: button-spin 0.75s linear infinite;
+}
+.auth-loading-message {
+  margin: -4px 0 0;
+  color: #5b655f;
+  font-size: 13px;
+  text-align: right;
+}
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .image-picker input {
   position: absolute;
   width: 1px;

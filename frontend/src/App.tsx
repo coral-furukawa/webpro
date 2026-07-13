@@ -136,6 +136,7 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const [loginFaculty, setLoginFaculty] = useState<Faculty | "">("");
   const [chatRoom, setChatRoom] = useState<ChatRoom | null>(null);
   const [chatList, setChatList] = useState<ChatSummary[] | null>(null);
@@ -439,26 +440,36 @@ export default function App() {
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (authLoading) return;
     setAuthError("");
+    setAuthLoading(true);
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    const response = await apiFetch(`/auth/${authMode}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...values,
-        ...(authMode === "register" && { grade: Number(values.grade) }),
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok)
-      return setAuthError(data.error ?? "ログインできませんでした");
-    setCurrentUser(data.user);
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
-    localStorage.setItem(
-      SESSION_EXPIRY_KEY,
-      String(Date.now() + SESSION_DURATION),
-    );
-    setShowLogin(false);
+    try {
+      const response = await apiFetch(`/auth/${authMode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...values,
+          ...(authMode === "register" && { grade: Number(values.grade) }),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setAuthError(data.error ?? "ログインできませんでした");
+        return;
+      }
+      setCurrentUser(data.user);
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+      localStorage.setItem(
+        SESSION_EXPIRY_KEY,
+        String(Date.now() + SESSION_DURATION),
+      );
+      setShowLogin(false);
+    } catch {
+      setAuthError("サーバーに接続できませんでした。少し待ってからもう一度お試しください。");
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
   async function startChat(itemId: number) {
@@ -1022,7 +1033,7 @@ export default function App() {
                 新規登録
               </button>
             </div>
-            <form className="listing-form" onSubmit={login}>
+            <form className="listing-form" onSubmit={login} aria-busy={authLoading}>
               <label className="required-field">
                 慶應メール
                 <input
@@ -1101,9 +1112,21 @@ export default function App() {
                   </div>
                 </>
               )}
-              <button className="submit-listing">
-                {authMode === "login" ? "ログインする" : "登録してはじめる"}
+              <button className="submit-listing" disabled={authLoading}>
+                {authLoading && <span className="button-spinner" aria-hidden="true" />}
+                {authLoading
+                  ? authMode === "login"
+                    ? "ログイン中…"
+                    : "登録中…"
+                  : authMode === "login"
+                    ? "ログインする"
+                    : "登録してはじめる"}
               </button>
+              {authLoading && (
+                <p className="auth-loading-message" role="status">
+                  サーバーへ接続しています。数秒かかることがあります。
+                </p>
+              )}
             </form>
           </div>
         </div>
