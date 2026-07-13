@@ -14,6 +14,7 @@ model User {
   department String?
   email   String  @unique
   passwordHash String?
+  avatarUrl String?
   grade   Int
   gpa     Decimal? @db.Decimal(3, 2)
   items   Item[]

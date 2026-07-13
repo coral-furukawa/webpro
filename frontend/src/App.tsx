@@ -45,6 +45,7 @@ type Item = {
     faculty: string;
     grade: number;
     gpa: string | null;
+    avatarUrl?: string | null;
   };
   course: { courseName: string };
   _count: { likes: number };
@@ -58,6 +59,7 @@ type Profile = {
     department: string | null;
     grade: number;
     gpa: string | null;
+    avatarUrl?: string | null;
     items: {
       id: number;
       title: string;
@@ -82,6 +84,7 @@ type CurrentUser = {
   faculty: string;
   department: string;
   grade: number;
+  avatarUrl?: string | null;
 };
 type ChatRoom = {
   id: number;
@@ -137,6 +140,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [avatarLoading, setAvatarLoading] = useState(false);
   const [loginFaculty, setLoginFaculty] = useState<Faculty | "">("");
   const [chatRoom, setChatRoom] = useState<ChatRoom | null>(null);
   const [chatList, setChatList] = useState<ChatSummary[] | null>(null);
@@ -651,6 +655,26 @@ export default function App() {
     setNotice("出品を取り消しました。");
   }
 
+  async function uploadAvatar(file?: File) {
+    if (!file || !currentUser) return;
+    setAvatarLoading(true);
+    setError("");
+    const formData = new FormData();
+    formData.set("avatar", file);
+    try {
+      const response = await apiFetch("/users/me/avatar", { method: "PUT", body: formData });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "プロフィール画像を変更できませんでした");
+      setCurrentUser(data.user);
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+      setNotice("プロフィール画像を変更しました。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "プロフィール画像を変更できませんでした");
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
+
   const selectedImages = selectedItem
     ? selectedItem.images.length
       ? selectedItem.images.map((image) => image.url)
@@ -685,7 +709,9 @@ export default function App() {
                   }}
                 >
                   <span className="nav-user-avatar" aria-hidden="true">
-                    {currentUser.name.slice(0, 1)}
+                    {currentUser.avatarUrl ? (
+                      <img src={assetUrl(currentUser.avatarUrl)} alt="" />
+                    ) : currentUser.name.slice(0, 1)}
                   </span>
                   <span className="nav-user-copy">
                     <strong>{currentUser.name}</strong>
@@ -1213,7 +1239,9 @@ export default function App() {
                   onClick={() => void openProfile(selectedItem.seller.id)}
                 >
                   <span className="avatar">
-                    {selectedItem.seller.name.slice(0, 1)}
+                    {selectedItem.seller.avatarUrl ? (
+                      <img src={assetUrl(selectedItem.seller.avatarUrl)} alt="" />
+                    ) : selectedItem.seller.name.slice(0, 1)}
                   </span>
                   <span>
                     <strong>{selectedItem.seller.name}</strong>
@@ -1501,9 +1529,20 @@ export default function App() {
                 {accountTab === "profile" && (
                   <>
                     <div className="account-profile">
-                      <div className="avatar">
-                        {currentUser.name.slice(0, 1)}
-                      </div>
+                      <label className="profile-avatar-picker" title="プロフィール画像を変更">
+                        <span className="avatar">
+                          {currentUser.avatarUrl ? (
+                            <img src={assetUrl(currentUser.avatarUrl)} alt={`${currentUser.name}のプロフィール画像`} />
+                          ) : currentUser.name.slice(0, 1)}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={avatarLoading}
+                          onChange={(event) => void uploadAvatar(event.target.files?.[0])}
+                        />
+                        <small>{avatarLoading ? "送信中…" : "写真を変更"}</small>
+                      </label>
                       <div>
                         <h3>{currentUser.name}</h3>
                         <p>
@@ -1647,7 +1686,9 @@ export default function App() {
                 <div className="modal-heading">
                   <div className="profile-heading">
                     <div className="avatar">
-                      {profile.user.name.slice(0, 1)}
+                      {profile.user.avatarUrl ? (
+                        <img src={assetUrl(profile.user.avatarUrl)} alt="" />
+                      ) : profile.user.name.slice(0, 1)}
                     </div>
                     <div>
                       <span className="eyebrow">SELLER PROFILE</span>

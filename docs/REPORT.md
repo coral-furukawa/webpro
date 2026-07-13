@@ -21,6 +21,7 @@
 - 出品者本人による出品の取り消し
 - ログアウト、一定期間後のセッション終了、アカウント削除
 - スマートフォン向けメニューとレスポンシブ表示
+- 写真ライブラリやカメラから選べるプロフィール画像設定
 
 ## 設計の説明
 
@@ -42,7 +43,7 @@ PostgreSQL
 
 データベースにはPostgreSQLを使用し、Prismaで操作した。主なテーブルはUser、Course、Item、ItemImage、Like、Demand、ChatRoom、Message、Transaction、Review、LoginAttemptである。商品に出品者情報を重複保存せず、ItemとUserをリレーションで結び付けることで、出品者の学部、学年、GPAを検索に利用できるようにした。
 
-商品画像とチャット画像はデータベースへ直接保存せず、CloudinaryへアップロードしたURLを保存する。これにより、Renderのサーバーが再起動しても画像が消えない構成にした。本番環境は、ReactをRenderのStatic Site、ExpressをWeb Service、PostgreSQLをRender Postgresへデプロイした。
+商品画像、チャット画像、プロフィール画像はデータベースへ直接保存せず、CloudinaryへアップロードしたURLを保存する。これにより、Renderのサーバーが再起動しても画像が消えない構成にした。プロフィール画像のURLはUserに保存し、ヘッダー、マイアカウント、商品詳細、出品者プロフィールへ共通して反映する。画像が未設定の場合は利用者名の頭文字を表示する。本番環境は、ReactをRenderのStatic Site、ExpressをWeb Service、PostgreSQLをRender Postgresへデプロイした。
 
 ### セキュリティ面
 
@@ -86,4 +87,3 @@ Prismaについても、マイグレーションが成功していてもPrisma C
 ## GitHubリポジトリへのURL
 
 - https://github.com/coral-furukawa/webpro
-

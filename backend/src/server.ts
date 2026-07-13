@@ -148,7 +148,7 @@ app.get("/users/:id", async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
-        id: true, name: true, faculty: true, department: true, grade: true, gpa: true,
+        id: true, name: true, faculty: true, department: true, grade: true, gpa: true, avatarUrl: true,
         items: {
           orderBy: { createdAt: "desc" }, take: 6,
           select: { id: true, title: true, price: true, imageUrl: true, images: { orderBy: { position: "asc" } }, status: true, course: { select: { courseName: true } } },
@@ -192,7 +192,7 @@ app.post("/auth/register", authLimiter, async (req, res, next) => {
       where: { email: normalizedEmail },
       update: { name: String(name).trim(), faculty, department, grade, passwordHash },
       create: { email: normalizedEmail, name: String(name).trim(), faculty, department, grade, passwordHash },
-      select: { id: true, name: true, faculty: true, department: true, grade: true },
+      select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
     });
     setAuthCookie(res, user.id);
     res.json({ user });
@@ -226,7 +226,7 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
     }
     await prisma.loginAttempt.deleteMany({ where: { email } });
     setAuthCookie(res, user.id);
-    res.json({ user: { id: user.id, name: user.name, faculty: user.faculty, department: user.department, grade: user.grade } });
+    res.json({ user: { id: user.id, name: user.name, faculty: user.faculty, department: user.department, grade: user.grade, avatarUrl: user.avatarUrl } });
   } catch (error) { next(error); }
 });
 
@@ -239,7 +239,7 @@ app.get("/auth/me", authenticate, async (_req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: Number(res.locals.userId) },
-      select: { id: true, name: true, faculty: true, department: true, grade: true },
+      select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
     });
     if (!user) return res.status(401).json({ error: "ユーザーが見つかりません" });
     res.json({ user });
@@ -249,6 +249,19 @@ app.get("/auth/me", authenticate, async (_req, res, next) => {
 app.post("/auth/logout", (_req, res) => {
   res.clearCookie(authCookieName, { httpOnly: true, secure: isProduction, sameSite: isProduction ? "none" : "lax", path: "/" });
   res.status(204).send();
+});
+
+app.put("/users/me/avatar", authenticate, upload.single("avatar"), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "プロフィール画像を選択してください" });
+    const [avatarUrl] = await saveImages([req.file], "avatars");
+    const user = await prisma.user.update({
+      where: { id: Number(res.locals.userId) },
+      data: { avatarUrl },
+      select: { id: true, name: true, faculty: true, department: true, grade: true, avatarUrl: true },
+    });
+    res.json({ user });
+  } catch (error) { next(error); }
 });
 
 app.delete("/users/:id", authenticate, async (req, res, next) => {
@@ -446,7 +459,7 @@ app.get("/items", async (req, res, next) => {
       },
       orderBy,
       include: {
-        seller: { select: { id: true, name: true, faculty: true, grade: true, gpa: true } },
+        seller: { select: { id: true, name: true, faculty: true, grade: true, gpa: true, avatarUrl: true } },
         course: true,
         images: { orderBy: { position: "asc" } },
         _count: { select: { likes: true } },
@@ -534,7 +547,7 @@ app.get("/likes", authenticate, async (_req, res, next) => {
       include: {
         item: {
           include: {
-            seller: { select: { id: true, name: true, faculty: true, grade: true, gpa: true } },
+            seller: { select: { id: true, name: true, faculty: true, grade: true, gpa: true, avatarUrl: true } },
             course: true,
             images: { orderBy: { position: "asc" } },
             _count: { select: { likes: true } },
