@@ -1807,3 +1807,30 @@ fieldset {
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
+.item-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+.item-card .book {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #ebe8df;
+}
+.item-card .book img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+.item-card .card-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.item-card .chat-button {
+  width: 100%;
+  margin-top: auto;
+}
