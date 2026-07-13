@@ -469,6 +469,11 @@ export default function App() {
         String(Date.now() + SESSION_DURATION),
       );
       setShowLogin(false);
+      setNotice(
+        authMode === "register"
+          ? "アカウントを登録し、そのままログインしました。"
+          : "ログインしました。",
+      );
     } catch {
       setAuthError("サーバーに接続できませんでした。少し待ってからもう一度お試しください。");
     } finally {

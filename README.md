@@ -75,7 +75,7 @@ Cloudinaryの3つの環境変数がすべて設定されている場合、商品
 
 - JWTはJavaScriptから読めないHTTP-only Cookieへ保存
 - Cookieは本番で `Secure` / `SameSite=None`
-- ログイン・登録にレート制限と3回失敗時のロックを適用
+- ログイン・登録にレート制限と5回失敗時の15分間ロックを適用
 - `ALLOWED_EMAIL_DOMAINS` で登録可能な大学メールドメインを制限
 - 出品、いいね、需要、チャット、アカウント削除はCookie認証から本人を判定
 - Helmetでセキュリティ関連HTTPヘッダーを設定

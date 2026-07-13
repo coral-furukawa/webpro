@@ -30,6 +30,7 @@ const port = Number(process.env.PORT ?? 8888);
 const jwtSecret = process.env.JWT_SECRET ?? "development-only-change-me";
 const isProduction = process.env.NODE_ENV === "production";
 const authCookieName = "keio_session";
+const maxLoginAttempts = 5;
 const allowedEmailDomains = (process.env.ALLOWED_EMAIL_DOMAINS ?? "keio.jp").split(",").map((domain) => domain.trim().toLowerCase());
 const uploadsDirectory = resolve("uploads");
 const cloudinaryEnabled = !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
@@ -208,21 +209,21 @@ app.post("/auth/login", authLimiter, async (req, res, next) => {
     if (loginAttempt?.lockedUntil && loginAttempt.lockedUntil > now) {
       const retryAfterSeconds = Math.ceil((loginAttempt.lockedUntil.getTime() - now.getTime()) / 1000);
       res.setHeader("Retry-After", retryAfterSeconds);
-      return res.status(429).json({ error: `ログインに3回失敗したためロック中です。約${Math.ceil(retryAfterSeconds / 60)}分後にもう一度お試しください` });
+      return res.status(429).json({ error: `ログインに${maxLoginAttempts}回失敗したためロック中です。約${Math.ceil(retryAfterSeconds / 60)}分後にもう一度お試しください` });
     }
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user?.passwordHash || !(await compare(password, user.passwordHash))) {
       const previousAttempts = loginAttempt?.lockedUntil && loginAttempt.lockedUntil <= now ? 0 : loginAttempt?.attempts ?? 0;
       const attempts = previousAttempts + 1;
-      const lockedUntil = attempts >= 3 ? new Date(now.getTime() + 15 * 60 * 1000) : null;
+      const lockedUntil = attempts >= maxLoginAttempts ? new Date(now.getTime() + 15 * 60 * 1000) : null;
       await prisma.loginAttempt.upsert({
         where: { email }, update: { attempts, lockedUntil }, create: { email, attempts, lockedUntil },
       });
       if (lockedUntil) {
         res.setHeader("Retry-After", 15 * 60);
-        return res.status(429).json({ error: "3回失敗したため、15分間ログインできません" });
+        return res.status(429).json({ error: `${maxLoginAttempts}回失敗したため、15分間ログインできません` });
       }
-      return res.status(401).json({ error: `メールアドレスまたはパスワードが違います。あと${3 - attempts}回失敗すると15分間ロックされます` });
+      return res.status(401).json({ error: `メールアドレスまたはパスワードが違います。あと${maxLoginAttempts - attempts}回失敗すると15分間ロックされます` });
     }
     await prisma.loginAttempt.deleteMany({ where: { email } });
     setAuthCookie(res, user.id);
