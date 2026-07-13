@@ -54,6 +54,61 @@ nav button {
   background: transparent;
   text-decoration: underline;
 }
+.nav-actions .user-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px 7px 7px;
+  border: 1px solid #ffffff38;
+  border-radius: 999px;
+  color: white;
+  background: #ffffff14;
+  box-shadow: inset 0 1px #ffffff18;
+  text-align: left;
+  text-decoration: none;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.nav-actions .user-button:hover {
+  border-color: #d9c36a99;
+  background: #ffffff22;
+  transform: translateY(-1px);
+}
+.nav-user-avatar {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #f5e59b66;
+  border-radius: 50%;
+  color: #20385f;
+  background: linear-gradient(145deg, #f7eaa9, #d9c36a);
+  font-family: Georgia, "Yu Mincho", serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+.nav-user-copy {
+  display: grid;
+  gap: 1px;
+  line-height: 1.2;
+}
+.nav-user-copy strong {
+  max-width: 120px;
+  overflow: hidden;
+  color: white;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-user-copy small {
+  color: #d8e1ee;
+  font-size: 10px;
+  font-weight: 500;
+}
+.nav-user-chevron {
+  color: #d9c36a;
+  font-size: 15px;
+}
 .nav-actions {
   display: flex;
   align-items: center;

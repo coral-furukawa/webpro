@@ -684,7 +684,14 @@ export default function App() {
                     setShowAccount(true);
                   }}
                 >
-                  {currentUser.name}さん
+                  <span className="nav-user-avatar" aria-hidden="true">
+                    {currentUser.name.slice(0, 1)}
+                  </span>
+                  <span className="nav-user-copy">
+                    <strong>{currentUser.name}</strong>
+                    <small>マイページ</small>
+                  </span>
+                  <span className="nav-user-chevron" aria-hidden="true">⌄</span>
                 </button>
                 <button type="button" onClick={() => void openChats()}>
                   チャット
