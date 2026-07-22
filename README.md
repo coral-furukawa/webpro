@@ -35,7 +35,7 @@ ALLOWED_EMAIL_DOMAINS="keio.jp"
 CLOUDINARY_CLOUD_NAME="CloudinaryのCloud name"
 CLOUDINARY_API_KEY="CloudinaryのAPI key"
 CLOUDINARY_API_SECRET="CloudinaryのAPI secret"
-STRIPE_SECRET_KEY="Stripeのシークレットキー"
+STRIPE_SECRET_KEY="sk_test_から始まるStripeテスト用シークレットキー"
 STRIPE_WEBHOOK_SECRET="Stripe Webhookの署名シークレット"
 ```
 
@@ -84,9 +84,13 @@ Cloudinaryの3つの環境変数がすべて設定されている場合、商品
 
 メールアドレスへ確認コードを実際に送信するには、Resend等のメール配信サービスのAPIキーと送信元ドメイン設定が別途必要です。
 
-## Stripe決済
+## テストポイント
 
-購入時はStripe Checkoutへ移動し、カード情報をアプリのサーバーへ保存せずに決済します。Stripe DashboardでWebhookの送信先を `https://your-backend.onrender.com/payments/webhook` に設定し、`checkout.session.completed`、`checkout.session.async_payment_succeeded`、`checkout.session.async_payment_failed`、`checkout.session.expired` を購読してください。
+授業提出用のテスト機能として、1ポイントを1円相当として商品を購入できます。ポイントの換金・出金はできません。商品購入時は、残高の減算、出品者への売上ポイント加算、取引記録、商品の売却済みへの変更を同じDBトランザクションで行います。
+
+チャージにはStripeのテストモードだけを使用できます。`STRIPE_SECRET_KEY` が `sk_test_` で始まらない場合、チャージAPIは無効になります。Stripe Checkoutではテストカードと日本円銀行振込を選択できます。銀行振込を表示するには、Stripe Dashboardでも銀行振込を有効にしてください。
+
+Webhookの送信先を `https://your-backend.onrender.com/payments/webhook` に設定し、`checkout.session.completed`、`checkout.session.async_payment_succeeded`、`checkout.session.async_payment_failed`、`checkout.session.expired` を購読してください。
 
 ローカルではStripe CLIでWebhookを転送できます。
 
@@ -94,7 +98,7 @@ Cloudinaryの3つの環境変数がすべて設定されている場合、商品
 stripe listen --forward-to localhost:8888/payments/webhook
 ```
 
-本機能はプラットフォームのStripeアカウントが代金を受け取る構成です。出品者への自動送金を行う場合は、Stripe Connectによる本人確認と送金処理を別途実装する必要があります。
+チャージ履歴はStripe Checkout Session IDを一意キーとして記録するため、同じWebhookが複数回来ても残高は一度だけ増加します。本機能を実เงินจริงで本番運用することは想定していません。
 
 ## 商品検索API
 

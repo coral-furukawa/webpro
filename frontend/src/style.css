@@ -2056,6 +2056,47 @@ fieldset {
   }
 }
 
+.wallet-panel { display: grid; gap: 22px; }
+.wallet-balance {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px;
+  border-left: 4px solid #20385f;
+  background: #eef1f5;
+}
+.wallet-balance span { color: #56645d; font-size: 13px; font-weight: 700; }
+.wallet-balance strong { color: #20385f; font-size: 32px; line-height: 1; }
+.wallet-balance strong small { font-size: 14px; }
+.wallet-topup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.wallet-topup label { display: grid; gap: 7px; color: #34443b; font-weight: 700; }
+.wallet-topup button { min-height: 50px; }
+.wallet-history h3 { margin: 0 0 10px; }
+.wallet-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e0e2de;
+}
+.wallet-entry > div { display: grid; gap: 4px; }
+.wallet-entry > div:last-child { text-align: right; }
+.wallet-entry time,
+.wallet-entry small { color: #707a74; font-size: 11px; }
+.wallet-entry .credit { color: #276344; }
+.wallet-entry .debit { color: #a23e32; }
+@media (max-width: 700px) {
+  .account-menu { grid-template-columns: repeat(5, 1fr); }
+  .wallet-topup { grid-template-columns: 1fr; }
+  .wallet-balance { align-items: flex-start; flex-direction: column; }
+}
+
 /* 履修検索のように条件を見渡せる教材検索パネル */
 .search-form {
   display: block;

@@ -10,7 +10,7 @@ const NAVIGATION_STORAGE_KEY = "currentScreen";
 type NavigationState =
   | { view: "home" }
   | { view: "listing" }
-  | { view: "account"; tab: "profile" | "likes" | "settings" | "delete" }
+  | { view: "account"; tab: "profile" | "wallet" | "likes" | "settings" | "delete" }
   | { view: "item"; id: number }
   | { view: "chats" }
   | { view: "chat"; id: number };
@@ -109,6 +109,18 @@ type ChatSummary = {
   messages: { content: string; createdAt: string }[];
   _count: { messages: number };
 };
+type Wallet = {
+  balance: number;
+  testMode: boolean;
+  entries: {
+    id: number;
+    amount: number;
+    balanceAfter: number;
+    type: "TOP_UP" | "PURCHASE" | "SALE" | "REFUND" | "ADJUSTMENT";
+    description: string;
+    createdAt: string;
+  }[];
+};
 
 export default function App() {
   const [initialNavigation] = useState(readNavigation);
@@ -152,7 +164,7 @@ export default function App() {
   const [showAccount, setShowAccount] = useState(initialNavigation.view === "account");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountTab, setAccountTab] = useState<
-    "profile" | "likes" | "settings" | "delete"
+    "profile" | "wallet" | "likes" | "settings" | "delete"
   >(initialNavigation.view === "account" ? initialNavigation.tab : "profile");
   const [socket, setSocket] = useState<Socket | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -163,6 +175,8 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [detailImage, setDetailImage] = useState(0);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
 
   async function search(form?: HTMLFormElement) {
     setLoading(true);
@@ -193,27 +207,33 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const payment = params.get("payment");
+    const walletResult = params.get("wallet");
     const sessionId = params.get("session_id");
-    if (!payment) return;
+    if (!walletResult) return;
     window.history.replaceState({}, "", window.location.pathname);
-    if (payment === "cancelled") {
-      setNotice("支払いをキャンセルしました。商品は一定時間後に再び購入できます。");
+    if (walletResult === "cancelled") {
+      setNotice("ポイントチャージをキャンセルしました。");
       return;
     }
-    if (payment !== "success" || !sessionId) return;
-
-    setPurchaseLoading(true);
-    void apiFetch(`/payments/checkout/${encodeURIComponent(sessionId)}`)
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? "支払い状況を確認できませんでした");
-        setNotice(data.completed ? "支払いが完了しました。" : "支払いを確認しています。");
-        await search();
-      })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : "支払い状況を確認できませんでした"))
-      .finally(() => setPurchaseLoading(false));
+    if (walletResult === "success" && sessionId) {
+      setWalletLoading(true);
+      void apiFetch(`/wallet/topups/${encodeURIComponent(sessionId)}`)
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error ?? "チャージ状況を確認できませんでした");
+          setNotice(data.completed ? "テストポイントをチャージしました。" : "銀行振込の入金を待っています。");
+          await loadWallet();
+        })
+        .catch((cause) => setError(cause instanceof Error ? cause.message : "チャージ状況を確認できませんでした"))
+        .finally(() => setWalletLoading(false));
+      return;
+    }
   }, []);
+
+  useEffect(() => {
+    if (currentUser) void loadWallet();
+    else setWallet(null);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!pendingNavigation) return;
@@ -701,18 +721,54 @@ export default function App() {
       setNotice("購入するにはログインしてください。");
       return;
     }
-    if (!window.confirm(`「${item.title}」の支払いへ進みますか？`)) return;
+    if (!window.confirm(`「${item.title}」を${item.price.toLocaleString()}ポイントで購入しますか？`)) return;
 
     setPurchaseLoading(true);
     setError("");
     try {
-      const response = await apiFetch(`/items/${item.id}/checkout`, { method: "POST" });
+      const response = await apiFetch(`/items/${item.id}/points/purchase`, { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "支払いを開始できませんでした");
+      if (!response.ok) throw new Error(data.error ?? "ポイントで購入できませんでした");
+      setItems((current) => current.filter((listed) => listed.id !== item.id));
+      setLikedItems((current) => current.filter((liked) => liked.id !== item.id));
+      setSelectedItem(null);
+      setNotice(data.message ?? "ポイントで購入しました。");
+      await loadWallet();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "ポイントで購入できませんでした");
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }
+
+  async function loadWallet() {
+    try {
+      const response = await apiFetch("/wallet");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "ポイント残高を取得できませんでした");
+      setWallet(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "ポイント残高を取得できませんでした");
+    }
+  }
+
+  async function topUpPoints(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWalletLoading(true);
+    setError("");
+    const amount = Number(new FormData(event.currentTarget).get("amount"));
+    try {
+      const response = await apiFetch("/wallet/topups/checkout", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ amount }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "チャージを開始できませんでした");
       window.location.assign(data.url);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "支払いを開始できませんでした");
-      setPurchaseLoading(false);
+      setError(cause instanceof Error ? cause.message : "チャージを開始できませんでした");
+      setWalletLoading(false);
     }
   }
 
@@ -1433,7 +1489,7 @@ export default function App() {
                       disabled={purchaseLoading}
                       onClick={() => void purchaseItem(selectedItem)}
                     >
-                      {purchaseLoading ? "決済画面を準備中…" : "支払いへ進む"}
+                      {purchaseLoading ? "購入処理中…" : `${selectedItem.price.toLocaleString()} ptで購入`}
                     </button>
                   </>
                 )}
@@ -1641,6 +1697,12 @@ export default function App() {
                   プロフィール
                 </button>
                 <button
+                  className={accountTab === "wallet" ? "active" : ""}
+                  onClick={() => setAccountTab("wallet")}
+                >
+                  ポイント
+                </button>
+                <button
                   className={accountTab === "likes" ? "active" : ""}
                   onClick={() => setAccountTab("likes")}
                 >
@@ -1704,6 +1766,47 @@ export default function App() {
                       </p>
                     </div>
                   </>
+                )}
+                {accountTab === "wallet" && (
+                  <div className="wallet-panel">
+                    <div className="wallet-balance">
+                      <span>テストポイント残高</span>
+                      <strong>{(wallet?.balance ?? 0).toLocaleString()}<small> pt</small></strong>
+                    </div>
+                    <form className="wallet-topup" onSubmit={topUpPoints}>
+                      <label>
+                        チャージ額
+                        <select name="amount" defaultValue="1000" disabled={!wallet?.testMode || walletLoading}>
+                          {[500, 1000, 3000, 5000, 10000].map((amount) => (
+                            <option value={amount} key={amount}>{amount.toLocaleString()}ポイント</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button disabled={!wallet?.testMode || walletLoading}>
+                        {walletLoading ? "処理中…" : "テスト決済でチャージ"}
+                      </button>
+                    </form>
+                    {!wallet?.testMode && <p className="message">テストチャージは現在利用できません。</p>}
+                    <div className="wallet-history">
+                      <h3>ポイント履歴</h3>
+                      {!wallet?.entries.length ? (
+                        <p className="message">ポイント履歴はまだありません。</p>
+                      ) : wallet.entries.map((entry) => (
+                        <div className="wallet-entry" key={entry.id}>
+                          <div>
+                            <strong>{entry.description}</strong>
+                            <time>{new Date(entry.createdAt).toLocaleString("ja-JP")}</time>
+                          </div>
+                          <div>
+                            <strong className={entry.amount > 0 ? "credit" : "debit"}>
+                              {entry.amount > 0 ? "+" : ""}{entry.amount.toLocaleString()} pt
+                            </strong>
+                            <small>残高 {entry.balanceAfter.toLocaleString()} pt</small>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 {accountTab === "likes" && (
                   <>

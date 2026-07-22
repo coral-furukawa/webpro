@@ -26,6 +26,8 @@ model User {
   buyerChats ChatRoom[] @relation("ChatBuyer")
   sellerChats ChatRoom[] @relation("ChatSeller")
   messages Message[]
+  wallet Wallet?
+  walletTopUps WalletTopUp[]
 
   @@index([faculty, grade, gpa])
 }
@@ -175,6 +177,43 @@ model LoginAttempt {
   updatedAt   DateTime  @updatedAt
 }
 
+model Wallet {
+  id        Int           @id @default(autoincrement())
+  userId    Int           @unique
+  balance   Int           @default(0)
+  stripeCustomerId String? @unique
+  updatedAt DateTime      @updatedAt
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries   WalletEntry[]
+}
+
+model WalletEntry {
+  id           Int             @id @default(autoincrement())
+  walletId     Int
+  amount       Int
+  balanceAfter Int
+  type         WalletEntryType
+  reference    String          @unique
+  description  String
+  createdAt    DateTime        @default(now())
+  wallet       Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+}
+
+model WalletTopUp {
+  id                      Int               @id @default(autoincrement())
+  userId                  Int
+  amount                  Int
+  status                  WalletTopUpStatus @default(PENDING)
+  stripeCheckoutSessionId String            @unique
+  completedAt             DateTime?
+  createdAt               DateTime          @default(now())
+  user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
 enum ItemStatus {
   AVAILABLE
   RESERVED
@@ -199,4 +238,19 @@ enum TransactionStatus {
   ACCEPTED
   COMPLETED
   CANCELLED
+}
+
+enum WalletEntryType {
+  TOP_UP
+  PURCHASE
+  SALE
+  REFUND
+  ADJUSTMENT
+}
+
+enum WalletTopUpStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
 }

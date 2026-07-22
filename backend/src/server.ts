@@ -38,6 +38,7 @@ const cloudinaryEnabled = !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CL
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
+const testPointsEnabled = stripeSecretKey?.startsWith("sk_test_") ?? false;
 
 if (isProduction && jwtSecret === "development-only-change-me") throw new Error("本番環境ではJWT_SECRETが必須です");
 if (cloudinaryEnabled) cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
@@ -52,45 +53,49 @@ const upload = multer({
   },
 });
 
-async function completeCheckout(session: Stripe.Checkout.Session) {
+async function completeWalletTopUp(session: Stripe.Checkout.Session) {
   if (session.payment_status === "unpaid") return false;
-  const itemId = Number(session.metadata?.itemId);
-  const buyerId = Number(session.metadata?.buyerId);
-  if (!Number.isInteger(itemId) || !Number.isInteger(buyerId)) {
-    throw new Error("Stripe Checkoutのmetadataが不正です");
+  const userId = Number(session.metadata?.userId);
+  const amount = Number(session.metadata?.amount);
+  if (!Number.isInteger(userId) || !Number.isInteger(amount) || amount <= 0) {
+    throw new Error("ポイントチャージのmetadataが不正です");
   }
 
   return prisma.$transaction(async (tx) => {
-    const transaction = await tx.transaction.findUnique({ where: { itemId } });
-    if (!transaction || transaction.buyerId !== buyerId) return false;
-    if (transaction.stripeCheckoutSessionId && transaction.stripeCheckoutSessionId !== session.id) return false;
-    if (transaction.status === "COMPLETED") return true;
-    if (transaction.status !== "REQUESTED") return false;
-
-    const updated = await tx.item.updateMany({
-      where: { id: itemId, status: "RESERVED" },
-      data: { status: "SOLD" },
+    const topUp = await tx.walletTopUp.findUnique({
+      where: { stripeCheckoutSessionId: session.id },
     });
-    if (updated.count !== 1) return false;
-    await tx.transaction.update({
-      where: { id: transaction.id },
-      data: { status: "COMPLETED", completedAt: new Date(), stripeCheckoutSessionId: session.id },
+    if (!topUp || topUp.userId !== userId || topUp.amount !== amount) return false;
+    if (topUp.status === "COMPLETED") return true;
+    const completed = await tx.walletTopUp.updateMany({
+      where: { id: topUp.id, status: "PENDING" },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    if (completed.count !== 1) return false;
+
+    const wallet = await tx.wallet.upsert({
+      where: { userId },
+      update: { balance: { increment: amount } },
+      create: { userId, balance: amount },
+    });
+    await tx.walletEntry.create({
+      data: {
+        walletId: wallet.id,
+        amount,
+        balanceAfter: wallet.balance,
+        type: "TOP_UP",
+        reference: `topup:${session.id}`,
+        description: "Stripeテストチャージ",
+      },
     });
     return true;
   });
 }
 
-async function releaseCheckout(session: Stripe.Checkout.Session) {
-  await prisma.$transaction(async (tx) => {
-    const transaction = await tx.transaction.findUnique({
-      where: { stripeCheckoutSessionId: session.id },
-    });
-    if (!transaction || transaction.status !== "REQUESTED") return;
-    await tx.transaction.update({ where: { id: transaction.id }, data: { status: "CANCELLED" } });
-    await tx.item.updateMany({
-      where: { id: transaction.itemId, status: "RESERVED" },
-      data: { status: "AVAILABLE" },
-    });
+async function failWalletTopUp(session: Stripe.Checkout.Session, expired: boolean) {
+  await prisma.walletTopUp.updateMany({
+    where: { stripeCheckoutSessionId: session.id, status: "PENDING" },
+    data: { status: expired ? "EXPIRED" : "FAILED" },
   });
 }
 
@@ -102,9 +107,11 @@ app.post("/payments/webhook", express.raw({ type: "application/json" }), async (
   try {
     const event = stripe.webhooks.constructEvent(req.body, signature, stripeWebhookSecret);
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
-      await completeCheckout(event.data.object);
+      if (event.data.object.metadata?.kind === "POINT_TOPUP") await completeWalletTopUp(event.data.object);
     } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
-      await releaseCheckout(event.data.object);
+      if (event.data.object.metadata?.kind === "POINT_TOPUP") {
+        await failWalletTopUp(event.data.object, event.type === "checkout.session.expired");
+      }
     }
     res.json({ received: true });
   } catch (error) {
@@ -677,99 +684,149 @@ app.patch("/items/:id", authenticate, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post("/items/:id/checkout", authenticate, async (req, res, next) => {
+app.get("/wallet", authenticate, async (_req, res, next) => {
   try {
-    if (!stripe) return res.status(503).json({ error: "支払い機能は現在準備中です" });
-    const itemId = Number(req.params.id);
-    const buyerId = Number(res.locals.userId);
-    if (!Number.isInteger(itemId)) {
-      return res.status(400).json({ error: "商品IDが正しくありません" });
+    const userId = Number(res.locals.userId);
+    const wallet = await prisma.wallet.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+      include: { entries: { orderBy: { createdAt: "desc" }, take: 50 } },
+    });
+    res.json({
+      balance: wallet.balance,
+      testMode: testPointsEnabled,
+      entries: wallet.entries,
+    });
+  } catch (error) { next(error); }
+});
+
+app.post("/wallet/topups/checkout", authenticate, async (req, res, next) => {
+  try {
+    if (!stripe || !testPointsEnabled) {
+      return res.status(503).json({ error: "テストポイントのチャージは現在利用できません" });
+    }
+    const userId = Number(res.locals.userId);
+    const amount = Number(req.body.amount);
+    if (!Number.isInteger(amount) || amount < 500 || amount > 50_000) {
+      return res.status(400).json({ error: "チャージ額は500〜50,000ポイントで指定してください" });
     }
 
-    const reservation = await prisma.$transaction(async (tx) => {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true, wallet: true },
+    });
+    if (!user) return res.status(404).json({ error: "ユーザーが見つかりません" });
+
+    let customerId = user.wallet?.stripeCustomerId;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        name: user.name,
+        email: user.email,
+        metadata: { userId: String(userId), purpose: "TEST_POINTS" },
+      });
+      customerId = customer.id;
+      await prisma.wallet.upsert({
+        where: { userId },
+        update: { stripeCustomerId: customerId },
+        create: { userId, stripeCustomerId: customerId },
+      });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer: customerId,
+      payment_method_types: ["card", "customer_balance"],
+      payment_method_options: {
+        customer_balance: {
+          funding_type: "bank_transfer",
+          bank_transfer: { type: "jp_bank_transfer" },
+        },
+      },
+      line_items: [{
+        quantity: 1,
+        price_data: {
+          currency: "jpy",
+          unit_amount: amount,
+          product_data: { name: `テストポイント ${amount.toLocaleString()}pt` },
+        },
+      }],
+      metadata: { kind: "POINT_TOPUP", userId: String(userId), amount: String(amount) },
+      success_url: `${frontendUrl}/?wallet=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontendUrl}/?wallet=cancelled`,
+      expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
+    });
+    if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
+    await prisma.walletTopUp.create({
+      data: { userId, amount, stripeCheckoutSessionId: session.id },
+    });
+    res.status(201).json({ url: session.url });
+  } catch (error) { next(error); }
+});
+
+app.get("/wallet/topups/:sessionId", authenticate, async (req, res, next) => {
+  try {
+    if (!stripe || !testPointsEnabled) {
+      return res.status(503).json({ error: "テストポイントのチャージは現在利用できません" });
+    }
+    const session = await stripe.checkout.sessions.retrieve(String(req.params.sessionId));
+    if (session.metadata?.kind !== "POINT_TOPUP" || Number(session.metadata.userId) !== Number(res.locals.userId)) {
+      return res.status(403).json({ error: "このチャージ情報は表示できません" });
+    }
+    const completed = await completeWalletTopUp(session);
+    res.json({ completed, paymentStatus: session.payment_status });
+  } catch (error) { next(error); }
+});
+
+app.post("/items/:id/points/purchase", authenticate, async (req, res, next) => {
+  try {
+    const itemId = Number(req.params.id);
+    const buyerId = Number(res.locals.userId);
+    if (!Number.isInteger(itemId)) return res.status(400).json({ error: "商品IDが正しくありません" });
+
+    const purchase = await prisma.$transaction(async (tx) => {
       const item = await tx.item.findUnique({
         where: { id: itemId },
-        select: { id: true, title: true, price: true, imageUrl: true, sellerId: true, status: true },
+        select: { id: true, title: true, price: true, sellerId: true, status: true },
       });
       if (!item) throw new Error("ITEM_NOT_FOUND");
       if (item.sellerId === buyerId) throw new Error("OWN_ITEM");
       if (item.status !== "AVAILABLE") throw new Error("ITEM_UNAVAILABLE");
 
-      const updated = await tx.item.updateMany({
-        where: { id: itemId, status: "AVAILABLE" },
-        data: { status: "RESERVED" },
+      const buyerWallet = await tx.wallet.upsert({ where: { userId: buyerId }, update: {}, create: { userId: buyerId } });
+      const sellerWallet = await tx.wallet.upsert({ where: { userId: item.sellerId }, update: {}, create: { userId: item.sellerId } });
+      const reserved = await tx.item.updateMany({ where: { id: item.id, status: "AVAILABLE" }, data: { status: "SOLD" } });
+      if (reserved.count !== 1) throw new Error("ITEM_UNAVAILABLE");
+      const debited = await tx.wallet.updateMany({
+        where: { id: buyerWallet.id, balance: { gte: item.price } },
+        data: { balance: { decrement: item.price } },
       });
-      if (updated.count !== 1) throw new Error("ITEM_UNAVAILABLE");
+      if (debited.count !== 1) throw new Error("INSUFFICIENT_POINTS");
 
+      const buyerAfter = await tx.wallet.findUniqueOrThrow({ where: { id: buyerWallet.id } });
+      const sellerAfter = await tx.wallet.update({
+        where: { id: sellerWallet.id },
+        data: { balance: { increment: item.price } },
+      });
       const transaction = await tx.transaction.upsert({
-        where: { itemId },
-        update: {
-          buyerId, status: "REQUESTED", completedAt: null, stripeCheckoutSessionId: null,
-        },
-        create: { itemId, buyerId, status: "REQUESTED" },
+        where: { itemId: item.id },
+        update: { buyerId, status: "COMPLETED", completedAt: new Date(), stripeCheckoutSessionId: null },
+        create: { itemId: item.id, buyerId, status: "COMPLETED", completedAt: new Date() },
       });
-      const buyer = await tx.user.findUnique({ where: { id: buyerId }, select: { email: true } });
-      return { item, transaction, buyer };
+      await tx.walletEntry.createMany({ data: [
+        { walletId: buyerWallet.id, amount: -item.price, balanceAfter: buyerAfter.balance, type: "PURCHASE", reference: `purchase:${item.id}:buyer`, description: `「${item.title}」を購入` },
+        { walletId: sellerWallet.id, amount: item.price, balanceAfter: sellerAfter.balance, type: "SALE", reference: `purchase:${item.id}:seller`, description: `「${item.title}」の売上` },
+      ] });
+      return { item, transaction, balance: buyerAfter.balance };
     });
-
-    try {
-      const image = reservation.item.imageUrl;
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        customer_email: reservation.buyer?.email ?? undefined,
-        line_items: [{
-          quantity: 1,
-          price_data: {
-            currency: "jpy",
-            unit_amount: reservation.item.price,
-            product_data: {
-              name: reservation.item.title,
-              ...(image?.startsWith("https://") && { images: [image] }),
-            },
-          },
-        }],
-        metadata: { itemId: String(itemId), buyerId: String(buyerId) },
-        success_url: `${frontendUrl}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${frontendUrl}/?payment=cancelled`,
-        expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
-      });
-      if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
-      await prisma.transaction.update({
-        where: { id: reservation.transaction.id },
-        data: { stripeCheckoutSessionId: session.id },
-      });
-      res.status(201).json({ url: session.url });
-    } catch (error) {
-      await prisma.$transaction([
-        prisma.transaction.update({ where: { id: reservation.transaction.id }, data: { status: "CANCELLED" } }),
-        prisma.item.updateMany({ where: { id: itemId, status: "RESERVED" }, data: { status: "AVAILABLE" } }),
-      ]);
-      throw error;
-    }
+    res.status(201).json({ message: `「${purchase.item.title}」をポイントで購入しました`, balance: purchase.balance });
   } catch (error) {
-    if (error instanceof Error && error.message === "ITEM_NOT_FOUND") {
-      return res.status(404).json({ error: "商品が見つかりません" });
-    }
-    if (error instanceof Error && error.message === "OWN_ITEM") {
-      return res.status(400).json({ error: "自分の商品は購入できません" });
-    }
-    if (error instanceof Error && error.message === "ITEM_UNAVAILABLE") {
-      return res.status(409).json({ error: "この商品はすでに購入済みです" });
-    }
+    if (error instanceof Error && error.message === "ITEM_NOT_FOUND") return res.status(404).json({ error: "商品が見つかりません" });
+    if (error instanceof Error && error.message === "OWN_ITEM") return res.status(400).json({ error: "自分の商品は購入できません" });
+    if (error instanceof Error && error.message === "ITEM_UNAVAILABLE") return res.status(409).json({ error: "この商品はすでに購入済みです" });
+    if (error instanceof Error && error.message === "INSUFFICIENT_POINTS") return res.status(409).json({ error: "ポイント残高が不足しています" });
     next(error);
   }
-});
-
-app.get("/payments/checkout/:sessionId", authenticate, async (req, res, next) => {
-  try {
-    if (!stripe) return res.status(503).json({ error: "支払い機能は現在準備中です" });
-    const session = await stripe.checkout.sessions.retrieve(String(req.params.sessionId));
-    if (Number(session.metadata?.buyerId) !== Number(res.locals.userId)) {
-      return res.status(403).json({ error: "この支払い情報は表示できません" });
-    }
-    const completed = await completeCheckout(session);
-    res.json({ completed, paymentStatus: session.payment_status });
-  } catch (error) { next(error); }
 });
 
 app.get("/likes", authenticate, async (_req, res, next) => {
