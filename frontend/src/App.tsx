@@ -162,6 +162,7 @@ export default function App() {
   const [likedItems, setLikedItems] = useState<Item[]>([]);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [detailImage, setDetailImage] = useState(0);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
 
   async function search(form?: HTMLFormElement) {
     setLoading(true);
@@ -669,6 +670,32 @@ export default function App() {
     setNotice("出品を取り消しました。");
   }
 
+  async function purchaseItem(item: Item) {
+    if (!currentUser) {
+      setAuthMode("login");
+      setShowLogin(true);
+      setNotice("購入するにはログインしてください。");
+      return;
+    }
+    if (!window.confirm(`「${item.title}」を購入しますか？\n購入すると商品一覧から表示されなくなります。`)) return;
+
+    setPurchaseLoading(true);
+    setError("");
+    try {
+      const response = await apiFetch(`/items/${item.id}/purchase`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "商品を購入できませんでした");
+      setItems((current) => current.filter((listed) => listed.id !== item.id));
+      setLikedItems((current) => current.filter((liked) => liked.id !== item.id));
+      setSelectedItem(null);
+      setNotice(data.message ?? "商品を購入しました。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "商品を購入できませんでした");
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }
+
   async function uploadAvatar(file?: File) {
     if (!file || !currentUser) return;
     setAvatarLoading(true);
@@ -887,48 +914,54 @@ export default function App() {
       </header>
 
       <form className="search-form" onSubmit={submit}>
-        <input name="courseName" placeholder="授業名・教科書名" />
-        <select
-          name="faculty"
-          value={searchFaculty}
-          onChange={(event) =>
-            setSearchFaculty(event.target.value as Faculty | "")
-          }
-        >
-          <option value="">すべての学部</option>
-          {faculties.map((faculty) => (
-            <option key={faculty}>{faculty}</option>
-          ))}
-        </select>
-        <select
-          name="department"
-          defaultValue=""
-          key={searchFaculty}
-          disabled={!searchFaculty}
-        >
-          <option value="">
-            {searchFaculty ? "すべての学科" : "先に学部を選択"}
-          </option>
-          {searchFaculty &&
-            departmentsByFaculty[searchFaculty].map((department) => (
-              <option key={department}>{department}</option>
+        <div className="search-heading">
+          <span className="eyebrow">SEARCH</span>
+          <h2>教材を検索</h2>
+        </div>
+        <label className="search-field">
+          <span>授業・教材名</span>
+          <input name="courseName" placeholder="授業名または教科書名を入力" />
+        </label>
+        <label className="search-field">
+          <span>学部</span>
+          <select name="faculty" value={searchFaculty} onChange={(event) => setSearchFaculty(event.target.value as Faculty | "")}>
+            <option value="">すべての学部</option>
+            {faculties.map((faculty) => <option key={faculty}>{faculty}</option>)}
+          </select>
+        </label>
+        <label className="search-field">
+          <span>学科</span>
+          <select name="department" defaultValue="" key={searchFaculty} disabled={!searchFaculty}>
+            <option value="">{searchFaculty ? "すべての学科" : "先に学部を選択"}</option>
+            {searchFaculty && departmentsByFaculty[searchFaculty].map((department) => <option key={department}>{department}</option>)}
+          </select>
+        </label>
+        <fieldset className="search-field search-grade">
+          <legend>学年</legend>
+          <div className="grade-options">
+            <label><input name="grade" type="radio" value="" defaultChecked /><span>すべて</span></label>
+            {[1, 2, 3, 4, 5, 6].map((grade) => (
+              <label key={grade}><input name="grade" type="radio" value={grade} /><span>{grade}年</span></label>
             ))}
-        </select>
-        <select name="grade" defaultValue="">
-          <option value="">すべての学年</option>
-          {[1, 2, 3, 4, 5, 6].map((grade) => (
-            <option key={grade} value={grade}>
-              {grade}年
-            </option>
-          ))}
-        </select>
-        <select name="sort" defaultValue="newest">
-          <option value="newest">新着順</option>
-          <option value="gpa_desc">出品者GPAが高い順</option>
-          <option value="price_asc">価格が安い順</option>
-          <option value="price_desc">価格が高い順</option>
-        </select>
-        <button>検索する</button>
+          </div>
+        </fieldset>
+        <label className="search-field">
+          <span>並び順</span>
+          <select name="sort" defaultValue="newest">
+            <option value="newest">新着順</option>
+            <option value="gpa_desc">出品者GPAが高い順</option>
+            <option value="price_asc">価格が安い順</option>
+            <option value="price_desc">価格が高い順</option>
+          </select>
+        </label>
+        <div className="search-actions">
+          <button type="button" className="search-reset" onClick={(event) => {
+            event.currentTarget.form?.reset();
+            setSearchFaculty("");
+            void search();
+          }}>条件をクリア</button>
+          <button type="submit">検索する</button>
+        </div>
       </form>
 
       {showListing && (
@@ -1373,6 +1406,14 @@ export default function App() {
                       }}
                     >
                       購入相談・チャット
+                    </button>
+                    <button
+                      type="button"
+                      className="purchase-button"
+                      disabled={purchaseLoading}
+                      onClick={() => void purchaseItem(selectedItem)}
+                    >
+                      {purchaseLoading ? "購入処理中…" : "購入を確定する"}
                     </button>
                   </>
                 )}

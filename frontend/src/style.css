@@ -1593,11 +1593,19 @@ fieldset {
   position: sticky;
   bottom: 0;
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   padding: 14px 0;
   background: #f5f2e9ed;
   backdrop-filter: blur(8px);
+}
+.detail-actions .purchase-button {
+  color: white;
+  background: #b93625;
+}
+.detail-actions .purchase-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 .detail-actions .detail-like {
   border: 1px solid #b4412c;
@@ -2046,4 +2054,58 @@ fieldset {
   .item-card .card-body {
     height: 275px;
   }
+}
+
+/* 履修検索のように条件を見渡せる教材検索パネル */
+.search-form {
+  display: block;
+  width: min(1060px, 94%);
+  padding: 0 28px 24px;
+}
+.search-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 20px 0 14px;
+  border-bottom: 3px solid #20385f;
+}
+.search-heading h2 { margin: 0; font-size: 22px; }
+.search-heading .eyebrow { color: #a33f54; font-size: 11px; font-weight: 800; }
+.search-field {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  margin: 0;
+  padding: 18px 0;
+  border: 0;
+  border-bottom: 1px solid #e0e2de;
+}
+.search-field > span,
+.search-field > legend { color: #25332c; font-weight: 700; }
+.search-field > input,
+.search-field > select { width: 100%; }
+.search-field > select:disabled { color: #7b837e; background: #f3f4f2; }
+.search-grade legend { padding: 0; }
+.grade-options { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.grade-options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.grade-options input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  padding: 0;
+  accent-color: #20385f;
+}
+.search-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 22px; }
+.search-actions .search-reset {
+  border: 1px solid #9da7a1;
+  color: #34443b;
+  background: white;
+}
+@media (max-width: 700px) {
+  .search-form { padding: 0 18px 18px; }
+  .search-field { grid-template-columns: 1fr; gap: 8px; padding: 14px 0; }
+  .grade-options { gap: 10px 16px; }
+  .search-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .search-actions button { width: 100%; padding-inline: 10px; }
 }
