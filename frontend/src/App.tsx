@@ -192,6 +192,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const sessionId = params.get("session_id");
+    if (!payment) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    if (payment === "cancelled") {
+      setNotice("支払いをキャンセルしました。商品は一定時間後に再び購入できます。");
+      return;
+    }
+    if (payment !== "success" || !sessionId) return;
+
+    setPurchaseLoading(true);
+    void apiFetch(`/payments/checkout/${encodeURIComponent(sessionId)}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "支払い状況を確認できませんでした");
+        setNotice(data.completed ? "支払いが完了しました。" : "支払いを確認しています。");
+        await search();
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "支払い状況を確認できませんでした"))
+      .finally(() => setPurchaseLoading(false));
+  }, []);
+
+  useEffect(() => {
     if (!pendingNavigation) return;
     if (pendingNavigation.view === "item" && !loading) {
       setSelectedItem(items.find((item) => item.id === pendingNavigation.id) ?? null);
@@ -677,21 +701,17 @@ export default function App() {
       setNotice("購入するにはログインしてください。");
       return;
     }
-    if (!window.confirm(`「${item.title}」を購入しますか？\n購入すると商品一覧から表示されなくなります。`)) return;
+    if (!window.confirm(`「${item.title}」の支払いへ進みますか？`)) return;
 
     setPurchaseLoading(true);
     setError("");
     try {
-      const response = await apiFetch(`/items/${item.id}/purchase`, { method: "POST" });
+      const response = await apiFetch(`/items/${item.id}/checkout`, { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "商品を購入できませんでした");
-      setItems((current) => current.filter((listed) => listed.id !== item.id));
-      setLikedItems((current) => current.filter((liked) => liked.id !== item.id));
-      setSelectedItem(null);
-      setNotice(data.message ?? "商品を購入しました。");
+      if (!response.ok) throw new Error(data.error ?? "支払いを開始できませんでした");
+      window.location.assign(data.url);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "商品を購入できませんでした");
-    } finally {
+      setError(cause instanceof Error ? cause.message : "支払いを開始できませんでした");
       setPurchaseLoading(false);
     }
   }
@@ -1413,7 +1433,7 @@ export default function App() {
                       disabled={purchaseLoading}
                       onClick={() => void purchaseItem(selectedItem)}
                     >
-                      {purchaseLoading ? "購入処理中…" : "購入を確定する"}
+                      {purchaseLoading ? "決済画面を準備中…" : "支払いへ進む"}
                     </button>
                   </>
                 )}

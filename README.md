@@ -35,6 +35,8 @@ ALLOWED_EMAIL_DOMAINS="keio.jp"
 CLOUDINARY_CLOUD_NAME="CloudinaryのCloud name"
 CLOUDINARY_API_KEY="CloudinaryのAPI key"
 CLOUDINARY_API_SECRET="CloudinaryのAPI secret"
+STRIPE_SECRET_KEY="Stripeのシークレットキー"
+STRIPE_WEBHOOK_SECRET="Stripe Webhookの署名シークレット"
 ```
 
 ## 2. バックエンド
@@ -81,6 +83,18 @@ Cloudinaryの3つの環境変数がすべて設定されている場合、商品
 - Helmetでセキュリティ関連HTTPヘッダーを設定
 
 メールアドレスへ確認コードを実際に送信するには、Resend等のメール配信サービスのAPIキーと送信元ドメイン設定が別途必要です。
+
+## Stripe決済
+
+購入時はStripe Checkoutへ移動し、カード情報をアプリのサーバーへ保存せずに決済します。Stripe DashboardでWebhookの送信先を `https://your-backend.onrender.com/payments/webhook` に設定し、`checkout.session.completed`、`checkout.session.async_payment_succeeded`、`checkout.session.async_payment_failed`、`checkout.session.expired` を購読してください。
+
+ローカルではStripe CLIでWebhookを転送できます。
+
+```bash
+stripe listen --forward-to localhost:8888/payments/webhook
+```
+
+本機能はプラットフォームのStripeアカウントが代金を受け取る構成です。出品者への自動送金を行う場合は、Stripe Connectによる本人確認と送金処理を別途実装する必要があります。
 
 ## 商品検索API
 

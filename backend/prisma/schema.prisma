@@ -112,6 +112,7 @@ model Transaction {
   handoffPlace String?
   handoffTime DateTime?
   completedAt DateTime?
+  stripeCheckoutSessionId String? @unique
   createdAt   DateTime          @default(now())
   item        Item              @relation(fields: [itemId], references: [id], onDelete: Cascade)
   buyer       User              @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Restrict)

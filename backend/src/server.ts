@@ -8,6 +8,7 @@ import multer from "multer";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
+import Stripe from "stripe";
 import { Pool } from "pg";
 import { mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -34,6 +35,9 @@ const maxLoginAttempts = 5;
 const allowedEmailDomains = (process.env.ALLOWED_EMAIL_DOMAINS ?? "keio.jp").split(",").map((domain) => domain.trim().toLowerCase());
 const uploadsDirectory = resolve("uploads");
 const cloudinaryEnabled = !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
 if (isProduction && jwtSecret === "development-only-change-me") throw new Error("本番環境ではJWT_SECRETが必須です");
 if (cloudinaryEnabled) cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
@@ -46,6 +50,67 @@ const upload = multer({
   fileFilter: (_req, file, callback) => {
     callback(null, ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"].includes(file.mimetype));
   },
+});
+
+async function completeCheckout(session: Stripe.Checkout.Session) {
+  if (session.payment_status === "unpaid") return false;
+  const itemId = Number(session.metadata?.itemId);
+  const buyerId = Number(session.metadata?.buyerId);
+  if (!Number.isInteger(itemId) || !Number.isInteger(buyerId)) {
+    throw new Error("Stripe Checkoutのmetadataが不正です");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const transaction = await tx.transaction.findUnique({ where: { itemId } });
+    if (!transaction || transaction.buyerId !== buyerId) return false;
+    if (transaction.stripeCheckoutSessionId && transaction.stripeCheckoutSessionId !== session.id) return false;
+    if (transaction.status === "COMPLETED") return true;
+    if (transaction.status !== "REQUESTED") return false;
+
+    const updated = await tx.item.updateMany({
+      where: { id: itemId, status: "RESERVED" },
+      data: { status: "SOLD" },
+    });
+    if (updated.count !== 1) return false;
+    await tx.transaction.update({
+      where: { id: transaction.id },
+      data: { status: "COMPLETED", completedAt: new Date(), stripeCheckoutSessionId: session.id },
+    });
+    return true;
+  });
+}
+
+async function releaseCheckout(session: Stripe.Checkout.Session) {
+  await prisma.$transaction(async (tx) => {
+    const transaction = await tx.transaction.findUnique({
+      where: { stripeCheckoutSessionId: session.id },
+    });
+    if (!transaction || transaction.status !== "REQUESTED") return;
+    await tx.transaction.update({ where: { id: transaction.id }, data: { status: "CANCELLED" } });
+    await tx.item.updateMany({
+      where: { id: transaction.itemId, status: "RESERVED" },
+      data: { status: "AVAILABLE" },
+    });
+  });
+}
+
+app.post("/payments/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe || !stripeWebhookSecret) return res.status(503).send("Stripe is not configured");
+  const signature = req.headers["stripe-signature"];
+  if (typeof signature !== "string") return res.status(400).send("Stripe signature is missing");
+
+  try {
+    const event = stripe.webhooks.constructEvent(req.body, signature, stripeWebhookSecret);
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+      await completeCheckout(event.data.object);
+    } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+      await releaseCheckout(event.data.object);
+    }
+    res.json({ received: true });
+  } catch (error) {
+    console.error("Stripe webhook error", error);
+    res.status(400).send("Webhook verification failed");
+  }
 });
 
 app.use(express.json());
@@ -609,6 +674,101 @@ app.patch("/items/:id", authenticate, async (req, res, next) => {
       },
     });
     res.json({ item });
+  } catch (error) { next(error); }
+});
+
+app.post("/items/:id/checkout", authenticate, async (req, res, next) => {
+  try {
+    if (!stripe) return res.status(503).json({ error: "支払い機能は現在準備中です" });
+    const itemId = Number(req.params.id);
+    const buyerId = Number(res.locals.userId);
+    if (!Number.isInteger(itemId)) {
+      return res.status(400).json({ error: "商品IDが正しくありません" });
+    }
+
+    const reservation = await prisma.$transaction(async (tx) => {
+      const item = await tx.item.findUnique({
+        where: { id: itemId },
+        select: { id: true, title: true, price: true, imageUrl: true, sellerId: true, status: true },
+      });
+      if (!item) throw new Error("ITEM_NOT_FOUND");
+      if (item.sellerId === buyerId) throw new Error("OWN_ITEM");
+      if (item.status !== "AVAILABLE") throw new Error("ITEM_UNAVAILABLE");
+
+      const updated = await tx.item.updateMany({
+        where: { id: itemId, status: "AVAILABLE" },
+        data: { status: "RESERVED" },
+      });
+      if (updated.count !== 1) throw new Error("ITEM_UNAVAILABLE");
+
+      const transaction = await tx.transaction.upsert({
+        where: { itemId },
+        update: {
+          buyerId, status: "REQUESTED", completedAt: null, stripeCheckoutSessionId: null,
+        },
+        create: { itemId, buyerId, status: "REQUESTED" },
+      });
+      const buyer = await tx.user.findUnique({ where: { id: buyerId }, select: { email: true } });
+      return { item, transaction, buyer };
+    });
+
+    try {
+      const image = reservation.item.imageUrl;
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        customer_email: reservation.buyer?.email ?? undefined,
+        line_items: [{
+          quantity: 1,
+          price_data: {
+            currency: "jpy",
+            unit_amount: reservation.item.price,
+            product_data: {
+              name: reservation.item.title,
+              ...(image?.startsWith("https://") && { images: [image] }),
+            },
+          },
+        }],
+        metadata: { itemId: String(itemId), buyerId: String(buyerId) },
+        success_url: `${frontendUrl}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${frontendUrl}/?payment=cancelled`,
+        expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
+      });
+      if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
+      await prisma.transaction.update({
+        where: { id: reservation.transaction.id },
+        data: { stripeCheckoutSessionId: session.id },
+      });
+      res.status(201).json({ url: session.url });
+    } catch (error) {
+      await prisma.$transaction([
+        prisma.transaction.update({ where: { id: reservation.transaction.id }, data: { status: "CANCELLED" } }),
+        prisma.item.updateMany({ where: { id: itemId, status: "RESERVED" }, data: { status: "AVAILABLE" } }),
+      ]);
+      throw error;
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "ITEM_NOT_FOUND") {
+      return res.status(404).json({ error: "商品が見つかりません" });
+    }
+    if (error instanceof Error && error.message === "OWN_ITEM") {
+      return res.status(400).json({ error: "自分の商品は購入できません" });
+    }
+    if (error instanceof Error && error.message === "ITEM_UNAVAILABLE") {
+      return res.status(409).json({ error: "この商品はすでに購入済みです" });
+    }
+    next(error);
+  }
+});
+
+app.get("/payments/checkout/:sessionId", authenticate, async (req, res, next) => {
+  try {
+    if (!stripe) return res.status(503).json({ error: "支払い機能は現在準備中です" });
+    const session = await stripe.checkout.sessions.retrieve(String(req.params.sessionId));
+    if (Number(session.metadata?.buyerId) !== Number(res.locals.userId)) {
+      return res.status(403).json({ error: "この支払い情報は表示できません" });
+    }
+    const completed = await completeCheckout(session);
+    res.json({ completed, paymentStatus: session.payment_status });
   } catch (error) { next(error); }
 });
 
